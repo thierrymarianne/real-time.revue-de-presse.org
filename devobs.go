@@ -3,31 +3,72 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"database/sql"
 	_ "github.com/go-sql-driver/mysql"
 	"log"
+	"os"
+	"path/filepath"
 )
 
-func main() {
-	db, err := sql.Open("mysql", "graystone:EXLh2aNHFJDzQrp@/weaving_dev")
-	handleError(err)
+var username string
 
-	username := "jonathanbeurel"
+type Configuration struct {
+	User     string
+	Password string
+	Database string
+}
+
+func init() {
+	const (
+		defaultUsername = "fabpot"
+		usage = "The username, whose tweets are about to be collected and counted"
+	)
+
+	flag.StringVar(&username, "username", defaultUsername, usage)
+}
+
+func main() {
+	flag.Parse()
+
+	db := connectToMySqlDatabase()
 
 	selectTweetsOfUserWithUsername(username, db)
+	countTweetsOfUser(username, db)
 
+	// "defer" keyword is described at https://tour.golang.org/flowcontrol/12
+	defer db.Close()
+}
+func connectToMySqlDatabase() *sql.DB {
+	err, configuration := parseConfiguration()
+
+	dsn := configuration.User + string(`:`) + configuration.Password + string(`@/`) + configuration.Database
+	db, err := sql.Open("mysql", dsn)
+	handleError(err)
+
+	return db
+}
+func parseConfiguration() (error, Configuration) {
+	dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
+	handleError(err)
+	file, err := os.Open(dir + `/config.json`)
+	handleError(err)
+	decoder := json.NewDecoder(file)
+	configuration := Configuration{}
+	err = decoder.Decode(&configuration)
+	handleError(err)
+	return err, configuration
+}
+
+func countTweetsOfUser(username string, db *sql.DB) {
 	countTweets, err := db.Prepare(`SELECT count(*) as Count ` +
 		`FROM weaving_twitter_user_stream ` +
 		`WHERE ust_full_name = ?`)
-
 	var tweetCount int
-
 	row := countTweets.QueryRow(username)
-
 	err = row.Scan(&tweetCount)
 	handleError(err)
-
 	fmt.Printf(`%d tweets have been collected for "%s"`+"\n", tweetCount, username)
 }
 
@@ -43,8 +84,7 @@ func selectTweetsOfUserWithUsername(username string, db *sql.DB) {
 			`WHERE ust_full_name = ? ` +
 			`ORDER BY ust_created_at DESC`)
 	handleError(err)
-	// "defer" keyword is described at https://tour.golang.org/flowcontrol/12
-	defer db.Close()
+
 	rows, err := selectTweets.Query(username)
 	columns, err := rows.Columns()
 	handleError(err)
@@ -54,6 +94,7 @@ func selectTweetsOfUserWithUsername(username string, db *sql.DB) {
 		scanArgs[i] = &values[i]
 	}
 	type Message struct {
+		Text string `json:text`
 		Retweet_count  int `json:retweet_count`
 		Favorite_count int `json:favorite_count`
 	}
@@ -66,9 +107,9 @@ func selectTweetsOfUserWithUsername(username string, db *sql.DB) {
 		for i, col := range values {
 			value = string(col)
 
-			if i != 2 {
+			if i != 2 && i != 1 {
 				fmt.Printf("%s: %s\n", columns[i], value)
-			} else {
+			} else if i != 1 {
 				apiDocument := []byte(value)
 
 				isValid := json.Valid(apiDocument)
@@ -82,8 +123,9 @@ func selectTweetsOfUserWithUsername(username string, db *sql.DB) {
 					handleError(err)
 				}
 
-				fmt.Printf("Retweet count : %d\n", decodedApiDocument.Retweet_count)
-				fmt.Printf("Favorite count : %d\n", decodedApiDocument.Favorite_count)
+				fmt.Printf("Text : %q\n", decodedApiDocument.Text)
+				fmt.Printf("Retweet count : %d \n", decodedApiDocument.Retweet_count)
+				fmt.Printf("Favorite count : %d \n", decodedApiDocument.Favorite_count)
 			}
 		}
 		fmt.Println("------------------")
