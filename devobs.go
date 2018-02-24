@@ -16,7 +16,9 @@ import (
 
 var username string
 var listAggregateNames bool
+var quiet bool
 var aggregateId int
+var aggregateTweetOffset int
 var aggregateTweetLimit int
 var writeDb *sql.DB
 
@@ -60,12 +62,18 @@ func init() {
 	const (
 		defaultAggregateId = 0
 		usage = "The id of an aggregate, which tweets are to be printed out"
-		defaultTweetLimit = 1000
-		defaultAggregateTweetLimitUsage = "Maximum tweets be collected"
+		defaultLimit = 1000
+		limitUsage = "Maximum tweets be collected"
+		defaultOffset = 0
+		offsetUsage = "Offset from where tweets are collected from"
+		defaultQuiet = false
+		quietUsage = "Quiet mode"
 	)
 
 	flag.IntVar(&aggregateId, "aggregate-id", defaultAggregateId, usage)
-	flag.IntVar(&aggregateTweetLimit, "aggregate-tweet-limit", defaultTweetLimit, defaultAggregateTweetLimitUsage)
+	flag.IntVar(&aggregateTweetLimit, "limit", defaultLimit, limitUsage)
+	flag.IntVar(&aggregateTweetOffset, "offset", defaultOffset, offsetUsage)
+	flag.BoolVar(&quiet, "quiet", defaultQuiet, quietUsage)
 }
 
 func main() {
@@ -95,12 +103,14 @@ func main() {
 func connectToMySqlDatabase() *sql.DB {
 	err, configuration := parseConfiguration()
 
-	dsn := configuration.Read_user + string(`:`) + configuration.Read_password + string(`@/`) + configuration.Read_database
+	dsn := configuration.Read_user + string(`:`) + configuration.Read_password + string(`@/`) +
+		configuration.Read_database + `?charset=utf8mb4`
 	db, err := sql.Open("mysql", dsn)
 	handleError(err)
 
 	dsn = configuration.Write_user + string(`:`) + configuration.Write_password +
-		string(`@` + configuration.Write_protocol_host_port +`/`) + configuration.Write_database
+		string(`@` + configuration.Write_protocol_host_port +`/`) + configuration.Write_database +
+			`?charset=utf8mb4`
 	writeDb, err = sql.Open("mysql", dsn)
 	handleError(err)
 
@@ -195,10 +205,10 @@ func selectTweetsOfAggregate(aggregateId int, db *sql.DB) {
 			WHERE s.ust_id = sa.status_id 
 			AND sa.aggregate_id = ? 
 			AND DATE(s.ust_created_at) >= SUBDATE(DATE(NOW()), 365)
-			ORDER BY sa.status_id DESC LIMIT ?`)
+			ORDER BY sa.status_id DESC LIMIT ?,?`)
 	handleError(err)
 
-	rows, err := selectTweets.Query(aggregateId, aggregateTweetLimit)
+	rows, err := selectTweets.Query(aggregateId, aggregateTweetOffset, aggregateTweetLimit)
 	handleError(err)
 
 	printTweets(rows, db)
@@ -219,6 +229,12 @@ func printTweets(rows *sql.Rows, db *sql.DB) {
 	for i := range values {
 		scanArgs[i] = &values[i]
 	}
+
+	insertTweet, err := writeDb.Prepare(`REPLACE INTO tweet (id, username, published_at, json)
+				VALUES (?, ?, ?, ?)`)
+	handleError(err)
+
+	rowIndex := 1
 
 	for rows.Next() {
 		err = rows.Scan(scanArgs...)
@@ -242,6 +258,10 @@ func printTweets(rows *sql.Rows, db *sql.DB) {
 					handleError(err)
 			}
 
+			if (quiet) {
+				continue
+			}
+
 			if i != 2 && i != 1 {
 				fmt.Printf("%s: %s\n", columns[i], value)
 			} else if i != 1 {
@@ -263,17 +283,23 @@ func printTweets(rows *sql.Rows, db *sql.DB) {
 				fmt.Printf("Favorite count : %d \n", decodedApiDocument.Favorite_count)
 			}
 		}
-		fmt.Println("------------------")
 
-		insertTweetIntoWriteDatabase(tweet)
+		if quiet && rowIndex % 1000 == 0 {
+			fmt.Printf(`.`)
+		}
+
+		rowIndex++
+
+		if (!quiet) {
+			fmt.Println("------------------")
+		}
+
+		insertTweetIntoWriteDatabase(tweet, insertTweet)
 	}
 }
 
-func insertTweetIntoWriteDatabase(tweet Tweet) {
-	insertTweet, err := writeDb.Prepare(`REPLACE INTO tweet (id, username, published_at, json)
-				VALUES (?, ?, ?, ?)`)
-	handleError(err)
-	_, err = insertTweet.Exec(
+func insertTweetIntoWriteDatabase(tweet Tweet, statement *sql.Stmt) {
+	_, err := statement.Exec(
 		tweet.id,
 		tweet.username,
 		tweet.publishedAt,
