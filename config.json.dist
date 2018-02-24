@@ -1,5 +1,9 @@
 {
-  "User": "",
-  "Password": "",
-  "Database": ""
+  "Read_user": "",
+  "Read_password": "",
+  "Read_database": "",
+  "Write_user": "",
+  "Write_password": "",
+  "Write_database": ""
+  "Write_protocol_host_port": ""
 }

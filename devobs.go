@@ -11,17 +11,30 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"strconv"
 )
 
 var username string
 var listAggregateNames bool
 var aggregateId int
 var aggregateTweetLimit int
+var writeDb *sql.DB
 
 type Configuration struct {
-	User     string
-	Password string
-	Database string
+	Read_user     string
+	Read_password string
+	Read_database string
+	Write_user     string
+	Write_password string
+	Write_database string
+	Write_protocol_host_port string
+}
+
+type Tweet struct {
+	id int
+	publishedAt string
+	username string
+	json string
 }
 
 // See when init function is run at https://stackoverflow.com/q/24790175/282073
@@ -82,8 +95,13 @@ func main() {
 func connectToMySqlDatabase() *sql.DB {
 	err, configuration := parseConfiguration()
 
-	dsn := configuration.User + string(`:`) + configuration.Password + string(`@/`) + configuration.Database
+	dsn := configuration.Read_user + string(`:`) + configuration.Read_password + string(`@/`) + configuration.Read_database
 	db, err := sql.Open("mysql", dsn)
+	handleError(err)
+
+	dsn = configuration.Write_user + string(`:`) + configuration.Write_password +
+		string(`@` + configuration.Write_protocol_host_port +`/`) + configuration.Write_database
+	writeDb, err = sql.Open("mysql", dsn)
 	handleError(err)
 
 	return db
@@ -151,7 +169,8 @@ func selectTweetsOfUser(username string, db *sql.DB) {
 			ust_text as Tweet,
 			ust_api_document as "API source",
 			CONCAT("https://twitter.com/", ust_full_name, "/status/", ust_status_id) as URL,
-			ust_created_at as "Publication date"
+			ust_created_at as "Publication date",
+			ust_id as Id			
 			FROM weaving_twitter_user_stream 
 			WHERE ust_full_name = ? 
 			ORDER BY ust_created_at DESC`)
@@ -170,7 +189,8 @@ func selectTweetsOfAggregate(aggregateId int, db *sql.DB) {
 			ust_text as Tweet,
 			ust_api_document as "API source",
 			CONCAT("https://twitter.com/", ust_full_name, "/status/", ust_status_id) as URL,
-			ust_created_at as "Publication date"
+			ust_created_at as "Publication date",
+			ust_id as Id
 			FROM weaving_status_aggregate sa, weaving_twitter_user_stream s
 			WHERE s.ust_id = sa.status_id 
 			AND sa.aggregate_id = ? 
@@ -205,8 +225,22 @@ func printTweets(rows *sql.Rows, db *sql.DB) {
 		handleError(err)
 
 		var value string
+		var tweet Tweet
+
 		for i, col := range values {
 			value = string(col)
+
+			switch {
+				case i == 0:
+					tweet.username = value
+				case i == 2:
+					tweet.json = value
+				case i == 4:
+					tweet.publishedAt = value
+				case i == 5:
+					tweet.id, err = strconv.Atoi(value)
+					handleError(err)
+			}
 
 			if i != 2 && i != 1 {
 				fmt.Printf("%s: %s\n", columns[i], value)
@@ -230,7 +264,21 @@ func printTweets(rows *sql.Rows, db *sql.DB) {
 			}
 		}
 		fmt.Println("------------------")
+
+		insertTweetIntoWriteDatabase(tweet)
 	}
+}
+
+func insertTweetIntoWriteDatabase(tweet Tweet) {
+	insertTweet, err := writeDb.Prepare(`REPLACE INTO tweet (id, username, published_at, json)
+				VALUES (?, ?, ?, ?)`)
+	handleError(err)
+	_, err = insertTweet.Exec(
+		tweet.id,
+		tweet.username,
+		tweet.publishedAt,
+		tweet.json)
+	handleError(err)
 }
 
 func handleError(err error) {
