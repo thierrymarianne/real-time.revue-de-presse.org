@@ -24,8 +24,8 @@ var aggregateTweetLimit int
 var writeDb *sql.DB
 
 const (
-	maxExecutionTimeInMinutes = 30
-	tweetPerPage = 100000
+	maxExecutionTimeInMinutes = 60
+	tweetPerPage = 50000
 )
 
 type Configuration struct {
@@ -259,7 +259,8 @@ func queryTweets(db *sql.DB, aggregateId int, page int, limit int, sortingOrder 
 	printTweets(rows, db, offset)
 
 	if aggregateTweetLimit == -1 {
-		fmt.Printf("Inserted %d tweets of page #%d from offset %d\n", itemsPerPage, page, offset)
+		fmt.Printf("Inserted %d tweets of page #%d from offset %d with direction %s\n",
+			itemsPerPage, page, offset, sortingOrder)
 	}
 }
 
