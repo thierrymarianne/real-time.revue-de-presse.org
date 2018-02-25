@@ -16,6 +16,7 @@ import (
 )
 
 var username string
+var readFromLocalDb bool
 var listAggregateNames bool
 var quiet bool
 var aggregateId int
@@ -50,9 +51,12 @@ func init() {
 	const (
 		defaultUsername = "fabpot"
 		usage = "The username, whose tweets are about to be collected and counted"
+		localDb = false
+		localDbUsage = "The database from which tweets should be read"
 	)
 
 	flag.StringVar(&username, "username", defaultUsername, usage)
+	flag.BoolVar(&readFromLocalDb, "read-from-local-db", localDb, localDbUsage)
 }
 
 func init() {
@@ -106,8 +110,77 @@ func main() {
 		return
 	}
 
+	if readFromLocalDb {
+		queryTweetsOf(username)
+
+		return
+	}
+
 	selectTweetsOfUser(username, db)
 	countTweetsOfUser(username, db)
+}
+
+func queryTweetsOf(username string) {
+	selectTweets, err := writeDb.Prepare(`
+		SELECT json
+		FROM tweet 
+		WHERE username = ? 
+		ORDER BY published_at DESC`)
+	handleError(err)
+
+	rows, err := selectTweets.Query(username)
+	handleError(err)
+
+	type Message struct {
+		Text           string `json:text`
+		Retweet_count  int    `json:retweet_count`
+		Favorite_count int    `json:favorite_count`
+		Created_at string    `json:created_at`
+		Id uint64    `json:id_str`
+	}
+
+	var decodedApiDocument Message
+	columns, err := rows.Columns()
+	handleError(err)
+
+	values := make([]sql.RawBytes, len(columns))
+	scanArgs := make([]interface{}, len(values))
+
+	for i := range values {
+		scanArgs[i] = &values[i]
+	}
+
+	for rows.Next() {
+		err = rows.Scan(scanArgs...)
+		handleError(err)
+
+		var value string
+
+		for _, col := range values {
+			value = string(col)
+
+			apiDocument := []byte(value)
+
+			isValid := json.Valid(apiDocument)
+			if !isValid {
+				handleError(errors.New("Invalid JSON"))
+			}
+
+			err := json.Unmarshal(apiDocument, &decodedApiDocument)
+
+			if err != nil {
+				handleError(err)
+			}
+
+			fmt.Printf("Text : %q\n", decodedApiDocument.Text)
+			fmt.Printf("URL : https://twitter.com/%s/status/%d\n", username, decodedApiDocument.Id)
+			fmt.Printf("Retweet count : %d \n", decodedApiDocument.Retweet_count)
+			fmt.Printf("Favorite count : %d \n", decodedApiDocument.Favorite_count)
+			fmt.Printf("Created At : %s \n", decodedApiDocument.Created_at)
+		}
+
+		fmt.Println("------------------")
+	}
 }
 
 func connectToMySqlDatabase() *sql.DB {
