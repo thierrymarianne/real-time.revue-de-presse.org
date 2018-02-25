@@ -12,15 +12,20 @@ import (
 	"path/filepath"
 	"strings"
 	"strconv"
+	"time"
 )
 
 var username string
 var listAggregateNames bool
 var quiet bool
 var aggregateId int
-var aggregateTweetOffset int
+var aggregateTweetPage int
 var aggregateTweetLimit int
 var writeDb *sql.DB
+
+const (
+	tweetPerPage = 100000
+)
 
 type Configuration struct {
 	Read_user     string
@@ -64,15 +69,15 @@ func init() {
 		usage = "The id of an aggregate, which tweets are to be printed out"
 		defaultLimit = 1000
 		limitUsage = "Maximum tweets be collected"
-		defaultOffset = 0
-		offsetUsage = "Offset from where tweets are collected from"
+		defaultPage = 0
+		pageUsage = "Page from where tweets are collected from"
 		defaultQuiet = false
 		quietUsage = "Quiet mode"
 	)
 
 	flag.IntVar(&aggregateId, "aggregate-id", defaultAggregateId, usage)
 	flag.IntVar(&aggregateTweetLimit, "limit", defaultLimit, limitUsage)
-	flag.IntVar(&aggregateTweetOffset, "offset", defaultOffset, offsetUsage)
+	flag.IntVar(&aggregateTweetPage, "page", defaultPage, pageUsage)
 	flag.BoolVar(&quiet, "quiet", defaultQuiet, quietUsage)
 }
 
@@ -86,6 +91,10 @@ func main() {
 
 	if aggregateId != 0 {
 		selectTweetsOfAggregate(aggregateId, db)
+
+		if aggregateTweetLimit == -1 {
+			time.Sleep(10 * 60 * time.Second)
+		}
 
 		return
 	}
@@ -120,12 +129,15 @@ func connectToMySqlDatabase() *sql.DB {
 func parseConfiguration() (error, Configuration) {
 	dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
 	handleError(err)
+
 	file, err := os.Open(dir + `/config.json`)
 	handleError(err)
+
 	decoder := json.NewDecoder(file)
 	configuration := Configuration{}
 	err = decoder.Decode(&configuration)
 	handleError(err)
+
 	return err, configuration
 }
 
@@ -174,16 +186,16 @@ func countTweetsOfUser(username string, db *sql.DB) {
 
 func selectTweetsOfUser(username string, db *sql.DB) {
 	selectTweets, err := db.Prepare(`
-			SELECT 
-			ust_full_name as Username,
-			ust_text as Tweet,
-			ust_api_document as "API source",
-			CONCAT("https://twitter.com/", ust_full_name, "/status/", ust_status_id) as URL,
-			ust_created_at as "Publication date",
-			ust_id as Id			
-			FROM weaving_twitter_user_stream 
-			WHERE ust_full_name = ? 
-			ORDER BY ust_created_at DESC`)
+		SELECT 
+		ust_full_name as Username,
+		ust_text as Tweet,
+		ust_api_document as "API source",
+		CONCAT("https://twitter.com/", ust_full_name, "/status/", ust_status_id) as URL,
+		ust_created_at as "Publication date",
+		ust_id as Id			
+		FROM weaving_twitter_user_stream 
+		WHERE ust_full_name = ? 
+		ORDER BY ust_created_at DESC`)
 	handleError(err)
 
 	rows, err := selectTweets.Query(username)
@@ -193,25 +205,57 @@ func selectTweetsOfUser(username string, db *sql.DB) {
 }
 
 func selectTweetsOfAggregate(aggregateId int, db *sql.DB) {
-	selectTweets, err := db.Prepare(`
-			SELECT 
-			ust_full_name as Username,
-			ust_text as Tweet,
-			ust_api_document as "API source",
-			CONCAT("https://twitter.com/", ust_full_name, "/status/", ust_status_id) as URL,
-			ust_created_at as "Publication date",
-			ust_id as Id
-			FROM weaving_status_aggregate sa, weaving_twitter_user_stream s
-			WHERE s.ust_id = sa.status_id 
-			AND sa.aggregate_id = ? 
-			AND DATE(s.ust_created_at) >= SUBDATE(DATE(NOW()), 365)
-			ORDER BY sa.status_id DESC LIMIT ?,?`)
+	if aggregateTweetLimit != -1 {
+		queryTweets(db, aggregateId, aggregateTweetPage, aggregateTweetLimit)
+
+		return
+	}
+
+	countTweets, err := db.Prepare(`
+		SELECT count(*) as Count 
+		FROM weaving_status_aggregate sa
+		WHERE sa.aggregate_id = ?`)
+
+	var tweetCount int
+	row := countTweets.QueryRow(aggregateId)
+	err = row.Scan(&tweetCount)
 	handleError(err)
 
-	rows, err := selectTweets.Query(aggregateId, aggregateTweetOffset, aggregateTweetLimit)
+	offsets := tweetCount / tweetPerPage
+	pageRange := make([]int, offsets)
+
+	for page := range pageRange {
+		go func (page int) {
+			queryTweets(db, aggregateId, page, tweetPerPage)
+		}(page)
+	}
+}
+
+func queryTweets(db *sql.DB, aggregateId int, page int, limit int) {
+	selectTweets, err := db.Prepare(`
+		SELECT 
+		ust_full_name as Username,
+		ust_text as Tweet,
+		ust_api_document as "API source",
+		CONCAT("https://twitter.com/", ust_full_name, "/status/", ust_status_id) as URL,
+		ust_created_at as "Publication date",
+		ust_id as Id
+		FROM weaving_status_aggregate sa, weaving_twitter_user_stream s
+		WHERE s.ust_id = sa.status_id 
+		AND sa.aggregate_id = ? 
+		AND DATE(s.ust_created_at) >= SUBDATE(DATE(NOW()), 365)
+		ORDER BY sa.status_id DESC LIMIT ?,?`)
+	handleError(err)
+
+	offset := page * tweetPerPage
+	rows, err := selectTweets.Query(aggregateId, offset, limit)
 	handleError(err)
 
 	printTweets(rows, db)
+
+	if aggregateTweetLimit == -1 {
+		fmt.Printf("Inserted %d tweets of page #%d\n", tweetPerPage, page)
+	}
 }
 
 func printTweets(rows *sql.Rows, db *sql.DB) {
@@ -230,8 +274,9 @@ func printTweets(rows *sql.Rows, db *sql.DB) {
 		scanArgs[i] = &values[i]
 	}
 
-	insertTweet, err := writeDb.Prepare(`REPLACE INTO tweet (id, username, published_at, json)
-				VALUES (?, ?, ?, ?)`)
+	insertTweet, err := writeDb.Prepare(`
+		REPLACE INTO tweet (id, username, published_at, json)
+		VALUES (?, ?, ?, ?)`)
 	handleError(err)
 
 	rowIndex := 1
