@@ -24,8 +24,8 @@ var aggregateTweetLimit int
 var writeDb *sql.DB
 
 const (
-	maxExecutionTimeInMinutes = 60
-	tweetPerPage = 50000
+	maxExecutionTimeInMinutes = 3 * 60
+	tweetPerPage = 100000
 )
 
 type Configuration struct {
@@ -237,6 +237,11 @@ func selectTweetsOfAggregate(aggregateId int, db *sql.DB) {
 }
 
 func queryTweets(db *sql.DB, aggregateId int, page int, limit int, sortingOrder string) {
+	condition := ``
+	if aggregateTweetLimit == -1 {
+		condition = `AND s.ust_updated_at IS NULL`
+	}
+
 	selectTweets, err := db.Prepare(`
 		SELECT 
 		ust_full_name as Username,
@@ -246,7 +251,8 @@ func queryTweets(db *sql.DB, aggregateId int, page int, limit int, sortingOrder 
 		ust_created_at as "Publication date",
 		ust_id as Id
 		FROM weaving_status_aggregate sa, weaving_twitter_user_stream s
-		WHERE s.ust_id = sa.status_id 
+		WHERE s.ust_id = sa.status_id
+		` + condition + `
 		AND sa.aggregate_id = ? 
 		ORDER BY sa.status_id ` + sortingOrder + ` LIMIT ?,?`)
 	handleError(err)
@@ -259,7 +265,7 @@ func queryTweets(db *sql.DB, aggregateId int, page int, limit int, sortingOrder 
 	printTweets(rows, db, offset)
 
 	if aggregateTweetLimit == -1 {
-		fmt.Printf("Inserted %d tweets of page #%d from offset %d with direction %s\n",
+		fmt.Printf("Inserted at most %d tweets for page #%d from offset %d with direction %s\n",
 			itemsPerPage, page, offset, sortingOrder)
 	}
 }
@@ -283,6 +289,10 @@ func printTweets(rows *sql.Rows, db *sql.DB, offset int) {
 	insertTweet, err := writeDb.Prepare(`
 		REPLACE INTO tweet (id, username, published_at, json)
 		VALUES (?, ?, ?, ?)`)
+	handleError(err)
+
+	updateOriginalTweet, err := db.Prepare(`
+		UPDATE weaving_twitter_user_stream SET ust_updated_at = NOW() WHERE ust_id = ?`)
 	handleError(err)
 
 	rowIndex := 1
@@ -346,6 +356,9 @@ func printTweets(rows *sql.Rows, db *sql.DB, offset int) {
 		}
 
 		insertTweetIntoWriteDatabase(tweet, insertTweet, offset)
+
+		_, err := updateOriginalTweet.Exec(tweet.id)
+		handleError(err)
 	}
 }
 
