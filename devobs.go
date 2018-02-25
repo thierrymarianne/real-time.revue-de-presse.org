@@ -24,6 +24,7 @@ var aggregateTweetLimit int
 var writeDb *sql.DB
 
 const (
+	maxExecutionTimeInMinutes = 30
 	tweetPerPage = 100000
 )
 
@@ -93,7 +94,7 @@ func main() {
 		selectTweetsOfAggregate(aggregateId, db)
 
 		if aggregateTweetLimit == -1 {
-			time.Sleep(10 * 60 * time.Second)
+			time.Sleep(maxExecutionTimeInMinutes * 60 * time.Second)
 		}
 
 		return
@@ -181,7 +182,7 @@ func countTweetsOfUser(username string, db *sql.DB) {
 	row := countTweets.QueryRow(username)
 	err = row.Scan(&tweetCount)
 	handleError(err)
-	fmt.Printf(`%d tweets have been collected for "%s"`+"\n", tweetCount, username)
+	fmt.Printf("\n" + `%d tweets have been collected for "%s"`+"\n", tweetCount, username)
 }
 
 func selectTweetsOfUser(username string, db *sql.DB) {
@@ -201,7 +202,7 @@ func selectTweetsOfUser(username string, db *sql.DB) {
 	rows, err := selectTweets.Query(username)
 	handleError(err)
 
-	printTweets(rows, db)
+	printTweets(rows, db, 0)
 }
 
 func selectTweetsOfAggregate(aggregateId int, db *sql.DB) {
@@ -243,7 +244,6 @@ func queryTweets(db *sql.DB, aggregateId int, page int, limit int) {
 		FROM weaving_status_aggregate sa, weaving_twitter_user_stream s
 		WHERE s.ust_id = sa.status_id 
 		AND sa.aggregate_id = ? 
-		AND DATE(s.ust_created_at) >= SUBDATE(DATE(NOW()), 365)
 		ORDER BY sa.status_id DESC LIMIT ?,?`)
 	handleError(err)
 
@@ -251,14 +251,14 @@ func queryTweets(db *sql.DB, aggregateId int, page int, limit int) {
 	rows, err := selectTweets.Query(aggregateId, offset, limit)
 	handleError(err)
 
-	printTweets(rows, db)
+	printTweets(rows, db, offset)
 
 	if aggregateTweetLimit == -1 {
-		fmt.Printf("Inserted %d tweets of page #%d\n", tweetPerPage, page)
+		fmt.Printf("Inserted %d tweets of page #%d from offset %d\n", tweetPerPage, page, offset)
 	}
 }
 
-func printTweets(rows *sql.Rows, db *sql.DB) {
+func printTweets(rows *sql.Rows, db *sql.DB, offset int) {
 	type Message struct {
 		Text string `json:text`
 		Retweet_count  int `json:retweet_count`
@@ -330,7 +330,7 @@ func printTweets(rows *sql.Rows, db *sql.DB) {
 		}
 
 		if quiet && rowIndex % 1000 == 0 {
-			fmt.Printf(`.`)
+			fmt.Printf(`.` + "\n")
 		}
 
 		rowIndex++
@@ -339,17 +339,28 @@ func printTweets(rows *sql.Rows, db *sql.DB) {
 			fmt.Println("------------------")
 		}
 
-		insertTweetIntoWriteDatabase(tweet, insertTweet)
+		insertTweetIntoWriteDatabase(tweet, insertTweet, offset)
 	}
 }
 
-func insertTweetIntoWriteDatabase(tweet Tweet, statement *sql.Stmt) {
-	_, err := statement.Exec(
+func insertTweetIntoWriteDatabase(tweet Tweet, statement *sql.Stmt, offset int) {
+	result, err := statement.Exec(
 		tweet.id,
 		tweet.username,
 		tweet.publishedAt,
 		tweet.json)
 	handleError(err)
+
+	if quiet {
+		affectedRows, err := result.RowsAffected()
+		handleError(err)
+
+		inserts := make([]int, affectedRows)
+
+		for _ = range inserts {
+			fmt.Printf(`%d` + "\n", offset)
+		}
+	}
 }
 
 func handleError(err error) {
