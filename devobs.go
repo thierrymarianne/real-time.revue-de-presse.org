@@ -207,7 +207,7 @@ func selectTweetsOfUser(username string, db *sql.DB) {
 
 func selectTweetsOfAggregate(aggregateId int, db *sql.DB) {
 	if aggregateTweetLimit != -1 {
-		queryTweets(db, aggregateId, aggregateTweetPage, aggregateTweetLimit)
+		queryTweets(db, aggregateId, aggregateTweetPage, aggregateTweetLimit, `DESC`)
 
 		return
 	}
@@ -223,16 +223,20 @@ func selectTweetsOfAggregate(aggregateId int, db *sql.DB) {
 	handleError(err)
 
 	offsets := tweetCount / tweetPerPage
-	pageRange := make([]int, offsets)
+	pageRange := make([]int, offsets + 1)
 
 	for page := range pageRange {
 		go func (page int) {
-			queryTweets(db, aggregateId, page, tweetPerPage)
+			queryTweets(db, aggregateId, page, tweetPerPage, `ASC`)
+		}(page)
+
+		go func (page int) {
+			queryTweets(db, aggregateId, page, tweetPerPage, `DESC`)
 		}(page)
 	}
 }
 
-func queryTweets(db *sql.DB, aggregateId int, page int, limit int) {
+func queryTweets(db *sql.DB, aggregateId int, page int, limit int, sortingOrder string) {
 	selectTweets, err := db.Prepare(`
 		SELECT 
 		ust_full_name as Username,
@@ -244,17 +248,18 @@ func queryTweets(db *sql.DB, aggregateId int, page int, limit int) {
 		FROM weaving_status_aggregate sa, weaving_twitter_user_stream s
 		WHERE s.ust_id = sa.status_id 
 		AND sa.aggregate_id = ? 
-		ORDER BY sa.status_id DESC LIMIT ?,?`)
+		ORDER BY sa.status_id ` + sortingOrder + ` LIMIT ?,?`)
 	handleError(err)
 
 	offset := page * tweetPerPage
-	rows, err := selectTweets.Query(aggregateId, offset, limit)
+	itemsPerPage := limit / 2 + 1
+	rows, err := selectTweets.Query(aggregateId, offset, itemsPerPage)
 	handleError(err)
 
 	printTweets(rows, db, offset)
 
 	if aggregateTweetLimit == -1 {
-		fmt.Printf("Inserted %d tweets of page #%d from offset %d\n", tweetPerPage, page, offset)
+		fmt.Printf("Inserted %d tweets of page #%d from offset %d\n", itemsPerPage, page, offset)
 	}
 }
 
