@@ -18,6 +18,7 @@ import (
 var username string
 var readFromLocalDb bool
 var listAggregateNames bool
+var sinceAWeekAgo bool
 var quiet bool
 var aggregateId int
 var aggregateTweetPage int
@@ -53,10 +54,13 @@ func init() {
 		usage = "The username, whose tweets are about to be collected and counted"
 		localDb = false
 		localDbUsage = "The database from which tweets should be read"
+		sinceLastWeek = false
+		sinceLastWeekUsage = "Collect tweets collected over the last week"
 	)
 
 	flag.StringVar(&username, "username", defaultUsername, usage)
 	flag.BoolVar(&readFromLocalDb, "read-from-local-db", localDb, localDbUsage)
+	flag.BoolVar(&sinceAWeekAgo, "since-last-week", sinceLastWeek, sinceLastWeekUsage)
 }
 
 func init() {
@@ -267,8 +271,9 @@ func selectTweetsOfUser(username string, db *sql.DB) {
 		CONCAT("https://twitter.com/", ust_full_name, "/status/", ust_status_id) as URL,
 		ust_created_at as "Publication date",
 		ust_id as Id			
-		FROM weaving_twitter_user_stream 
-		WHERE ust_full_name = ? 
+		FROM weaving_twitter_user_stream s
+		WHERE ust_full_name = ? ` +
+		sinceWhen() + `
 		ORDER BY ust_created_at DESC`)
 	handleError(err)
 
@@ -312,26 +317,27 @@ func selectTweetsOfAggregate(aggregateId int, db *sql.DB) {
 func queryTweets(db *sql.DB, aggregateId int, page int, limit int, sortingOrder string) {
 	condition := ``
 	if aggregateTweetLimit == -1 {
-		condition = `AND s.ust_updated_at IS NULL`
+		condition = `AND s.ust_updated_at IS NULL `
 	}
 
 	selectTweets, err := db.Prepare(`
-		SELECT 
-		ust_full_name as Username,
-		ust_text as Tweet,
-		ust_api_document as "API source",
-		CONCAT("https://twitter.com/", ust_full_name, "/status/", ust_status_id) as URL,
-		ust_created_at as "Publication date",
-		ust_id as Id
-		FROM weaving_status_aggregate sa, weaving_twitter_user_stream s
-		WHERE s.ust_id = sa.status_id
-		` + condition + `
-		AND sa.aggregate_id = ? 
-		ORDER BY sa.status_id ` + sortingOrder + ` LIMIT ?,?`)
+			SELECT 
+			ust_full_name as Username,
+			ust_text as Tweet,
+			ust_api_document as "API source",
+			CONCAT("https://twitter.com/", ust_full_name, "/status/", ust_status_id) as URL,
+			ust_created_at as "Publication date",
+			ust_id as Id
+			FROM weaving_status_aggregate sa, weaving_twitter_user_stream s
+			WHERE s.ust_id = sa.status_id
+			` + sinceWhen() + `
+			` + condition + `
+			AND sa.aggregate_id = ? 
+			ORDER BY sa.status_id ` + sortingOrder + ` LIMIT ?,?`)
 	handleError(err)
 
 	offset := page * tweetPerPage
-	itemsPerPage := limit / 2 + 1
+	itemsPerPage := limit/2 + 1
 	rows, err := selectTweets.Query(aggregateId, offset, itemsPerPage)
 	handleError(err)
 
@@ -341,6 +347,14 @@ func queryTweets(db *sql.DB, aggregateId int, page int, limit int, sortingOrder 
 		fmt.Printf("Inserted at most %d tweets for page #%d from offset %d with direction %s\n",
 			itemsPerPage, page, offset, sortingOrder)
 	}
+}
+
+func sinceWhen() string {
+	since := ``
+	if (sinceAWeekAgo) {
+		since = `AND DATE(s.ust_created_at) > SUBDATE(DATE(NOW()), 7)`
+	}
+	return since
 }
 
 func printTweets(rows *sql.Rows, db *sql.DB, offset int) {
