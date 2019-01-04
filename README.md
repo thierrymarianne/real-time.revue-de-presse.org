@@ -1,6 +1,11 @@
 # Daily Press Review
 
 ```
+# Get dependency
+go get -u github.com/go-sql-driver/mysql
+```
+
+```
 # Install project from repository clone in file system
 go install github.com/weavingtheweb/devobs
 ```
