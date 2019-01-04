@@ -6,17 +6,13 @@ go get -u github.com/go-sql-driver/mysql
 ```
 
 ```
+# Build application
+go build github.com/daily-press-review-golang
+```
+
+```
 # Install project from repository clone in file system
-go install github.com/weavingtheweb/devobs
-```
-
-```
-/usr/local/go/bin/go build src/github.com/weavingtheweb/devobs-go/main.go
-```
-
-```
-# Install binary
-go install github.com/weavingtheweb/devobs-go
+go install github.com/daily-press-review-golang
 ```
 
 ```
