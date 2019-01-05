@@ -137,7 +137,7 @@ func main() {
 }
 
 func removeStatuses(firebase *firego.Firebase) {
-	ref, err := firebase.Ref("status")
+	ref, err := firebase.Ref("highlights")
 	handleError(err)
 
 	err = ref.Remove()
@@ -397,9 +397,6 @@ func migrateStatusesToFirebaseApp(rows *sql.Rows, firebase *firego.Firebase, agg
 
 			async.Do(func (tweet Tweet, index int) {
 				addToFirebaseApp(tweet, index, firebase, aggregateId)
-
-				// Throttling
-				time.Sleep(1 * time.Second)
 				defer wg.Done()
 			}, tweet, index)
 		}
@@ -429,7 +426,7 @@ func addToFirebaseApp(tweet Tweet, index int, firebase *firego.Firebase, aggrega
 
 	statusId := decodedApiDocument.Id
 	statusRef, err := firebase.Ref("highlights/" + strconv.Itoa(aggregateId) + "/" + sinceDate + "/" +
-		statusId + "/" + tweet.checkedAt)
+		tweet.checkedAt + "/" + statusId)
 	handleError(err)
 
 	status := map[string]interface{}{
