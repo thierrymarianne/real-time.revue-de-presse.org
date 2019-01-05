@@ -136,6 +136,14 @@ func main() {
 	}
 }
 
+func removeStatuses(firebase *firego.Firebase) {
+	ref, err := firebase.Ref("status")
+	handleError(err)
+
+	err = ref.Remove()
+	handleError(err)
+}
+
 func formatTodayDate() string {
 	today := time.Now()
 
@@ -420,7 +428,8 @@ func addToFirebaseApp(tweet Tweet, index int, firebase *firego.Firebase, aggrega
 	handleError(err)
 
 	statusId := decodedApiDocument.Id
-	statusRef, err := firebase.Ref("highlights/" + strconv.Itoa(aggregateId) + "/" + statusId + "/" + tweet.checkedAt)
+	statusRef, err := firebase.Ref("highlights/" + strconv.Itoa(aggregateId) + "/" + sinceDate + "/" +
+		statusId + "/" + tweet.checkedAt)
 	handleError(err)
 
 	status := map[string]interface{}{
