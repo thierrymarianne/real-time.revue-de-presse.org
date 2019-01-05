@@ -425,8 +425,15 @@ func addToFirebaseApp(tweet Tweet, index int, firebase *firego.Firebase, aggrega
 	handleError(err)
 
 	statusId := decodedApiDocument.Id
+
+	var statusType string
+	statusType = "status"
+	if tweet.isRetweet {
+		statusType = "retweet"
+	}
+
 	statusRef, err := firebase.Ref("highlights/" + strconv.Itoa(aggregateId) + "/" + sinceDate + "/" +
-		tweet.checkedAt + "/" + statusId)
+		statusType + "/" + tweet.checkedAt + "/" + statusId)
 	handleError(err)
 
 	status := map[string]interface{}{
