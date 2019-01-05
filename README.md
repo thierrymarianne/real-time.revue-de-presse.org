@@ -3,6 +3,8 @@
 ```
 # Get dependency
 go get -u github.com/go-sql-driver/mysql
+go get -u cloud.google.com/go/compute/metadata
+go get -u golang.org/x/oauth2
 ```
 
 ```
@@ -27,3 +29,7 @@ go run devobs.go -aggregate-id=1 -limit=-1
 ```
 ./bin/devobs -username=VitalikButerin -since-last-week=1 | less
 ```
+
+## References
+
+[https://console.firebase.google.com/u/1/project/weaving-the-web-6fe11/settings/serviceaccounts/adminsdk](Firebase Admin SDK)
