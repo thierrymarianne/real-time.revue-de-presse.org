@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/ti/nasync"
+	_ "github.com/ti/nasync"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"gopkg.in/zabawaba99/firego.v1"
@@ -377,18 +379,21 @@ func migrateStatusesToFirebaseApp(rows *sql.Rows, firebase *firego.Firebase, agg
 	fmt.Printf("\n")
 
 	if parallel {
+		async := nasync.New(100,100)
+		defer async.Close()
+
 		var wg sync.WaitGroup
 
 		for index, tweet := range tweets {
 			wg.Add(1)
 
-			go func (tweet Tweet, index int) {
+			async.Do(func (tweet Tweet, index int) {
 				addToFirebaseApp(tweet, index, firebase, aggregateId)
 
 				// Throttling
 				time.Sleep(1 * time.Second)
 				defer wg.Done()
-			}(tweet, index)
+			}, tweet, index)
 		}
 
 		wg.Wait()

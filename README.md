@@ -1,33 +1,36 @@
 # Daily Press Review
 
+## Dependencies
+
 ```
 # Get dependency
 go get -u github.com/go-sql-driver/mysql
 go get -u cloud.google.com/go/compute/metadata
 go get -u golang.org/x/oauth2
+go get -u gopkg.in/zabawaba99/firego.v1
+go get -u github.com/ti/nasync
 ```
+
+## Build
+
 
 ```
 # Build application
 go build github.com/daily-press-review-golang
 ```
 
+## Installation
+
 ```
 # Install project from repository clone in file system
 go install github.com/daily-press-review-golang
 ```
 
-```
-# Output statuses related to aggregate having id #1
-go run devobs.go -aggregate-id=1 -limit=-1
-
-# or
-
-./bin/devobs.go -aggregate-id=1 -limit=-1
-```
+## Run
 
 ```
-./bin/devobs -username=VitalikButerin -since-last-week=1 | less
+# Migrate statuses from the first aggregate
+./daily-press-review-golang -aggregate-id=1 -since-date=2019-01-02 -in-parallel=true
 ```
 
 ## References
