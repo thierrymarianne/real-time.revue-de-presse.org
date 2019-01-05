@@ -1,72 +1,93 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
-	"database/sql"
 	_ "github.com/go-sql-driver/mysql"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
+	"gopkg.in/zabawaba99/firego.v1"
+	"io/ioutil"
 	"log"
+	_ "math"
 	"os"
 	"path/filepath"
-	"strings"
 	"strconv"
+	"sync"
 	"time"
 )
 
 var username string
 var readFromLocalDb bool
 var listAggregateNames bool
+var sinceDate string
 var sinceAWeekAgo bool
+var parallel bool
 var quiet bool
 var aggregateId int
 var aggregateTweetPage int
 var aggregateTweetLimit int
-var writeDb *sql.DB
 
 const (
 	maxExecutionTimeInMinutes = 3 * 60
-	tweetPerPage = 100000
+	tweetPerPage              = 100000
 )
 
 type Configuration struct {
-	Read_user     string
-	Read_password string
-	Read_database string
-	Write_user     string
-	Write_password string
-	Write_database string
+	Firebase_url             string
+	Read_user                string
+	Read_password            string
+	Read_database            string
+	Read_protocol_host_port  string
+	Write_user               string
+	Write_password           string
+	Write_database           string
 	Write_protocol_host_port string
 }
 
+type Status struct {
+	Id             string `json:"id_str"`
+	Text           string `json:"full_text"`
+	Retweet_count  int    `json:retweet_count`
+	Favorite_count int    `json:favorite_count`
+}
+
 type Tweet struct {
-	id int
+	id          int
 	publishedAt string
-	username string
-	json string
+	username    string
+	json        string
+	url         string
+	tweet       string
+	retweets    int
+	favorites   int
+	twitterId   string
+	isRetweet   bool
+	checkedAt   string
 }
 
 // See when init function is run at https://stackoverflow.com/q/24790175/282073
 func init() {
 	const (
-		defaultUsername = "fabpot"
-		usage = "The username, whose tweets are about to be collected and counted"
-		localDb = false
-		localDbUsage = "The database from which tweets should be read"
-		sinceLastWeek = false
-		sinceLastWeekUsage = "Collect tweets collected over the last week"
+		defaultUsername    = "fabpot"
+		usage              = "The username, whose tweets are about to be collected and counted"
+		localDbUsage       = "The database from which tweets should be read"
+		sinceTodayUsage    = "Store tweets collected over the current day"
+		sinceLastWeekUsage = "Store tweets collected over the last week"
 	)
 
 	flag.StringVar(&username, "username", defaultUsername, usage)
-	flag.BoolVar(&readFromLocalDb, "read-from-local-db", localDb, localDbUsage)
-	flag.BoolVar(&sinceAWeekAgo, "since-last-week", sinceLastWeek, sinceLastWeekUsage)
+	flag.BoolVar(&readFromLocalDb, "read-from-local-db", false, localDbUsage)
+	flag.BoolVar(&sinceAWeekAgo, "since-last-week", false, sinceLastWeekUsage)
+	flag.StringVar(&sinceDate, "since-date", formatTodayDate(), sinceTodayUsage)
 }
 
 func init() {
 	const (
 		defaultAggregateListing = false
-		usage = "List aggregate names"
+		usage                   = "List aggregate names"
 	)
 
 	flag.BoolVar(&listAggregateNames, "aggregate", defaultAggregateListing, usage)
@@ -75,137 +96,78 @@ func init() {
 func init() {
 	const (
 		defaultAggregateId = 0
-		usage = "The id of an aggregate, which tweets are to be printed out"
-		defaultLimit = 1000
-		limitUsage = "Maximum tweets be collected"
-		defaultPage = 0
-		pageUsage = "Page from where tweets are collected from"
-		defaultQuiet = false
-		quietUsage = "Quiet mode"
+		usage              = "The id of an aggregate, which tweets are to be printed out"
+		defaultLimit       = -1
+		limitUsage         = "Maximum tweets be collected"
+		defaultPage        = 0
+		pageUsage          = "Page from where tweets are collected from"
+		defaultQuiet       = true
+		quietUsage         = "Quiet mode"
+		defaultParallel    = true
+		parallelUsage         = "Run in parallel"
 	)
 
 	flag.IntVar(&aggregateId, "aggregate-id", defaultAggregateId, usage)
 	flag.IntVar(&aggregateTweetLimit, "limit", defaultLimit, limitUsage)
 	flag.IntVar(&aggregateTweetPage, "page", defaultPage, pageUsage)
 	flag.BoolVar(&quiet, "quiet", defaultQuiet, quietUsage)
+	flag.BoolVar(&parallel, "in-parallel", defaultParallel, parallelUsage)
 }
 
 func main() {
 	flag.Parse()
 
-	db := connectToMySqlDatabase()
+	err, configuration := parseConfiguration()
+	handleError(err)
+
+	db := connectToMySqlDatabase(configuration)
 
 	// "defer" keyword is described at https://tour.golang.org/flowcontrol/12
 	defer db.Close()
 
-	if aggregateId != 0 {
-		selectTweetsOfAggregate(aggregateId, db)
+	firebase := connectToFirebase(configuration)
 
-		if aggregateTweetLimit == -1 {
-			time.Sleep(maxExecutionTimeInMinutes * 60 * time.Second)
-		}
+	queryTweets(db, firebase, aggregateId, aggregateTweetPage, aggregateTweetLimit, `DESC`)
 
-		return
-	}
-
-	if listAggregateNames {
-		selectAggregates(db)
-
-		return
-	}
-
-	if readFromLocalDb {
-		queryTweetsOf(username)
-
-		return
-	}
-
-	selectTweetsOfUser(username, db)
-	countTweetsOfUser(username, db)
-}
-
-func queryTweetsOf(username string) {
-	selectTweets, err := writeDb.Prepare(`
-		SELECT json
-		FROM tweet 
-		WHERE username = ? 
-		ORDER BY published_at DESC`)
-	handleError(err)
-
-	rows, err := selectTweets.Query(username)
-	handleError(err)
-
-	type Message struct {
-		Text           string `json:text`
-		Retweet_count  int    `json:retweet_count`
-		Favorite_count int    `json:favorite_count`
-		Created_at string    `json:created_at`
-		Id uint64    `json:id_str`
-	}
-
-	var decodedApiDocument Message
-	columns, err := rows.Columns()
-	handleError(err)
-
-	values := make([]sql.RawBytes, len(columns))
-	scanArgs := make([]interface{}, len(values))
-
-	for i := range values {
-		scanArgs[i] = &values[i]
-	}
-
-	for rows.Next() {
-		err = rows.Scan(scanArgs...)
-		handleError(err)
-
-		var value string
-
-		for _, col := range values {
-			value = string(col)
-
-			apiDocument := []byte(value)
-
-			isValid := json.Valid(apiDocument)
-			if !isValid {
-				handleError(errors.New("Invalid JSON"))
-			}
-
-			err := json.Unmarshal(apiDocument, &decodedApiDocument)
-
-			if err != nil {
-				handleError(err)
-			}
-
-			fmt.Printf("Text : %q\n", decodedApiDocument.Text)
-			fmt.Printf("URL : https://twitter.com/%s/status/%d\n", username, decodedApiDocument.Id)
-			fmt.Printf("Retweet count : %d \n", decodedApiDocument.Retweet_count)
-			fmt.Printf("Favorite count : %d \n", decodedApiDocument.Favorite_count)
-			fmt.Printf("Created At : %s \n", decodedApiDocument.Created_at)
-		}
-
-		fmt.Println("------------------")
+	if aggregateTweetLimit == -1 {
+		time.Sleep(maxExecutionTimeInMinutes * 60 * time.Second)
 	}
 }
 
-func connectToMySqlDatabase() *sql.DB {
-	err, configuration := parseConfiguration()
+func formatTodayDate() string {
+	today := time.Now()
 
-	dsn := configuration.Read_user + string(`:`) + configuration.Read_password + string(`@/`) +
+	return today.Format("2006-01-02")
+}
+
+func connectToMySqlDatabase(configuration Configuration) *sql.DB {
+	dsn := configuration.Read_user + string(`:`) + configuration.Read_password +
+		string(`@(`+configuration.Read_protocol_host_port+`)/`) +
 		configuration.Read_database + `?charset=utf8mb4`
 	db, err := sql.Open("mysql", dsn)
-	handleError(err)
-
-	dsn = configuration.Write_user + string(`:`) + configuration.Write_password +
-		string(`@` + configuration.Write_protocol_host_port +`/`) + configuration.Write_database +
-			`?charset=utf8mb4`
-	writeDb, err = sql.Open("mysql", dsn)
 	handleError(err)
 
 	return db
 }
 
+func connectToFirebase(configuration Configuration) *firego.Firebase {
+	dir, err := filepath.Abs(os.Getenv("GOPATH"))
+	handleError(err)
+
+	file, err := ioutil.ReadFile(dir + `/config.firebase.json`)
+	handleError(err)
+
+	conf, err := google.JWTConfigFromJSON(file, "https://www.googleapis.com/auth/userinfo.email",
+		"https://www.googleapis.com/auth/firebase.database")
+	handleError(err)
+
+	firebase := firego.New(configuration.Firebase_url, conf.Client(oauth2.NoContext))
+
+	return firebase
+}
+
 func parseConfiguration() (error, Configuration) {
-	dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
+	dir, err := filepath.Abs(os.Getenv("GOPATH"))
 	handleError(err)
 
 	file, err := os.Open(dir + `/config.json`)
@@ -219,152 +181,113 @@ func parseConfiguration() (error, Configuration) {
 	return err, configuration
 }
 
-func selectAggregates(db *sql.DB) {
-	rows, err := db.Query(`SELECT id as Id, name as Name FROM weaving_aggregate`)
+func queryTweets(db *sql.DB, firebase *firego.Firebase, aggregateId int, page int, limit int, sortingOrder string) {
+	totalHighlights := countHighlights(db, limit)
 
-	columns, err := rows.Columns()
+	var query string
+	query = `
+		SELECT
+		CONCAT("https://twitter.com/", ust_full_name, "/status/", ust_status_id) as url,
+		s.ust_full_name as username,
+		s.ust_text as tweet,
+		s.ust_created_at as publicationDate,
+		s.ust_api_document as Json,
+		p.total_retweets retweets,
+		p.total_favorites favorites,
+		s.ust_id as id,
+		s.ust_status_id as statusId,
+		h.is_retweet,
+		p.checked_at as checkedAt
+		FROM highlight h
+		INNER JOIN weaving_status s
+		ON h.aggregate_id = ?
+		AND s.ust_id = h.status_id
+		` + sinceWhen() + `
+		INNER JOIN status_popularity p
+		ON p.status_id = h.status_id
+		ORDER BY retweets ` + sortingOrder
+
+	if limit > 0 {
+		query = query + ` LIMIT ?,?`
+	}
+
+	selectTweets, err := db.Prepare(query)
+	handleError(err)
+
+	rows := selectTweetsWindow(limit, page, selectTweets, aggregateId, err)
+
+	migrateStatusesToFirebaseApp(rows, firebase, aggregateId, totalHighlights)
+}
+
+func selectTweetsWindow(limit int, page int, selectTweets *sql.Stmt, aggregateId int, err error) *sql.Rows {
+	if limit > 0 {
+		offset := page * tweetPerPage
+		itemsPerPage := limit
+		rows, err := selectTweets.Query(aggregateId, sinceDate, offset, itemsPerPage)
+		handleError(err)
+
+		return rows
+	}
+
+	rows, err := selectTweets.Query(aggregateId, sinceDate)
+	handleError(err)
+
+	return rows
+}
+
+func countHighlights(db *sql.DB, limit int) int {
+	var totalHighlights int
+
+	var query string
+	query = `
+		SELECT COUNT(*) highlights
+		FROM highlight h
+		INNER JOIN weaving_status s
+		ON h.aggregate_id = ?
+		AND s.ust_id = h.status_id
+		` + sinceWhen() + `
+		INNER JOIN status_popularity p
+		ON p.status_id = h.status_id`
+
+	statement, err := db.Prepare(query)
+	handleError(err)
+
+	highlightsCount, err := statement.Query(aggregateId, sinceDate)
+	handleError(err)
+
+	columns, err := highlightsCount.Columns()
 	handleError(err)
 	values := make([]sql.RawBytes, len(columns))
 	scanArgs := make([]interface{}, len(values))
-	for i := range values {
-		scanArgs[i] = &values[i]
-	}
+	scanArgs[0] = &values[0]
 
-	for rows.Next() {
-		err = rows.Scan(scanArgs...)
+	highlightsCount.Next()
+	err = highlightsCount.Scan(scanArgs...)
+	handleError(err)
+
+	for _, col := range values {
+		totalHighlights, err = strconv.Atoi(string(col))
 		handleError(err)
-
-		var value string
-		for i, col := range values {
-			value = string(col)
-			fmt.Printf("%s", strings.Replace(value, `user :: `, ``, -1))
-
-			if i == 0 {
-				fmt.Printf("\t")
-
-				continue
-			}
-
-			fmt.Printf("\n")
-		}
-	}
-}
-
-func countTweetsOfUser(username string, db *sql.DB) {
-	countTweets, err := db.Prepare(`
-		SELECT count(*) as Count 
-		FROM weaving_twitter_user_stream 
-		WHERE ust_full_name = ?`)
-	var tweetCount int
-	row := countTweets.QueryRow(username)
-	err = row.Scan(&tweetCount)
-	handleError(err)
-	fmt.Printf("\n" + `%d tweets have been collected for "%s"`+"\n", tweetCount, username)
-}
-
-func selectTweetsOfUser(username string, db *sql.DB) {
-	selectTweets, err := db.Prepare(`
-		SELECT 
-		ust_full_name as Username,
-		ust_text as Tweet,
-		ust_api_document as "API source",
-		CONCAT("https://twitter.com/", ust_full_name, "/status/", ust_status_id) as URL,
-		ust_created_at as "Publication date",
-		ust_id as Id			
-		FROM weaving_twitter_user_stream s
-		WHERE ust_full_name = ? ` +
-		sinceWhen() + `
-		ORDER BY ust_created_at DESC`)
-	handleError(err)
-
-	rows, err := selectTweets.Query(username)
-	handleError(err)
-
-	printTweets(rows, db, 0)
-}
-
-func selectTweetsOfAggregate(aggregateId int, db *sql.DB) {
-	if aggregateTweetLimit != -1 {
-		queryTweets(db, aggregateId, aggregateTweetPage, aggregateTweetLimit, `DESC`)
-
-		return
 	}
 
-	countTweets, err := db.Prepare(`
-		SELECT count(*) as Count 
-		FROM weaving_status_aggregate sa
-		WHERE sa.aggregate_id = ?`)
+	fmt.Printf("Found %d matching higlights on %s\n", totalHighlights, sinceDate)
 
-	var tweetCount int
-	row := countTweets.QueryRow(aggregateId)
-	err = row.Scan(&tweetCount)
-	handleError(err)
-
-	offsets := tweetCount / tweetPerPage
-	pageRange := make([]int, offsets + 1)
-
-	for page := range pageRange {
-		go func (page int) {
-			queryTweets(db, aggregateId, page, tweetPerPage, `ASC`)
-		}(page)
-
-		go func (page int) {
-			queryTweets(db, aggregateId, page, tweetPerPage, `DESC`)
-		}(page)
-	}
-}
-
-func queryTweets(db *sql.DB, aggregateId int, page int, limit int, sortingOrder string) {
-	condition := ``
-	if aggregateTweetLimit == -1 {
-		condition = `AND s.ust_updated_at IS NULL `
+	if limit > -1 && limit < totalHighlights {
+		return limit
 	}
 
-	selectTweets, err := db.Prepare(`
-			SELECT 
-			ust_full_name as Username,
-			ust_text as Tweet,
-			ust_api_document as "API source",
-			CONCAT("https://twitter.com/", ust_full_name, "/status/", ust_status_id) as URL,
-			ust_created_at as "Publication date",
-			ust_id as Id
-			FROM weaving_status_aggregate sa, weaving_twitter_user_stream s
-			WHERE s.ust_id = sa.status_id
-			` + sinceWhen() + `
-			` + condition + `
-			AND sa.aggregate_id = ? 
-			ORDER BY sa.status_id ` + sortingOrder + ` LIMIT ?,?`)
-	handleError(err)
-
-	offset := page * tweetPerPage
-	itemsPerPage := limit/2 + 1
-	rows, err := selectTweets.Query(aggregateId, offset, itemsPerPage)
-	handleError(err)
-
-	printTweets(rows, db, offset)
-
-	if aggregateTweetLimit == -1 {
-		fmt.Printf("Inserted at most %d tweets for page #%d from offset %d with direction %s\n",
-			itemsPerPage, page, offset, sortingOrder)
-	}
+	return totalHighlights
 }
 
 func sinceWhen() string {
-	since := ``
-	if (sinceAWeekAgo) {
-		since = `AND DATE(s.ust_created_at) > SUBDATE(DATE(NOW()), 7)`
+	if sinceAWeekAgo {
+		return `AND DATE(s.ust_created_at) > SUBDATE(DATE(NOW()), 7)`
 	}
-	return since
+
+	return `AND DATE(h.publication_date_time) = ?`
 }
 
-func printTweets(rows *sql.Rows, db *sql.DB, offset int) {
-	type Message struct {
-		Text string `json:text`
-		Retweet_count  int `json:retweet_count`
-		Favorite_count int `json:favorite_count`
-	}
-	var decodedApiDocument Message
-
+func migrateStatusesToFirebaseApp(rows *sql.Rows, firebase *firego.Firebase, aggregateId int, totalHighlights int) {
 	columns, err := rows.Columns()
 	handleError(err)
 	values := make([]sql.RawBytes, len(columns))
@@ -373,21 +296,15 @@ func printTweets(rows *sql.Rows, db *sql.DB, offset int) {
 		scanArgs[i] = &values[i]
 	}
 
-	insertTweet, err := writeDb.Prepare(`
-		REPLACE INTO tweet (id, username, published_at, json)
-		VALUES (?, ?, ?, ?)`)
-	handleError(err)
+	rowIndex := 0
 
-	updateOriginalTweet, err := db.Prepare(`
-		UPDATE weaving_twitter_user_stream SET ust_updated_at = NOW() WHERE ust_id = ?`)
-	handleError(err)
-
-	rowIndex := 1
+	tweets := make([]Tweet, totalHighlights)
 
 	for rows.Next() {
 		err = rows.Scan(scanArgs...)
 		handleError(err)
 
+		var decodedApiDocument Status
 		var value string
 		var tweet Tweet
 
@@ -395,78 +312,135 @@ func printTweets(rows *sql.Rows, db *sql.DB, offset int) {
 			value = string(col)
 
 			switch {
-				case i == 0:
-					tweet.username = value
-				case i == 2:
-					tweet.json = value
-				case i == 4:
-					tweet.publishedAt = value
-				case i == 5:
-					tweet.id, err = strconv.Atoi(value)
-					handleError(err)
+			case i == 0:
+				tweet.url = value
+			case i == 1:
+				tweet.username = value
+			case i == 2:
+				tweet.tweet = value
+			case i == 3:
+				tweet.publishedAt = value
+			case i == 4:
+				tweet.json = value
+			case i == 5:
+				tweet.retweets, err = strconv.Atoi(value)
+			case i == 6:
+				tweet.favorites, err = strconv.Atoi(value)
+			case i == 7:
+				tweet.id, err = strconv.Atoi(value)
+			case i == 8:
+				tweet.twitterId = value
+			case i == 9:
+				tweet.isRetweet = false
+				if value == "1" {
+					tweet.isRetweet = true
+				}
+			case i == 10:
+				tweet.checkedAt = value
 			}
 
-			if (quiet) {
+			tweets[rowIndex] = tweet
+
+			if quiet {
 				continue
 			}
 
-			if i != 2 && i != 1 {
+			if i != 4 && i != 1 {
 				fmt.Printf("%s: %s\n", columns[i], value)
-			} else if i != 1 {
+			} else if i == 4 {
 				apiDocument := []byte(value)
 
 				isValid := json.Valid(apiDocument)
 				if !isValid {
-					handleError(errors.New("Invalid JSON"))
+					fmt.Printf("%s for status \"%s\"", "Invalid JSON", string(values[8]))
+					continue
 				}
 
 				err := json.Unmarshal(apiDocument, &decodedApiDocument)
-
 				if err != nil {
 					handleError(err)
 				}
-
-				fmt.Printf("Text : %q\n", decodedApiDocument.Text)
-				fmt.Printf("Retweet count : %d \n", decodedApiDocument.Retweet_count)
-				fmt.Printf("Favorite count : %d \n", decodedApiDocument.Favorite_count)
 			}
 		}
 
-		if quiet && rowIndex % 1000 == 0 {
-			fmt.Printf(`.` + "\n")
+		if quiet && rowIndex%1000 == 0 {
+			fmt.Printf(`.`)
 		}
 
 		rowIndex++
 
-		if (!quiet) {
+		if !quiet {
 			fmt.Println("------------------")
 		}
+	}
 
-		insertTweetIntoWriteDatabase(tweet, insertTweet, offset)
+	fmt.Printf("\n")
 
-		_, err := updateOriginalTweet.Exec(tweet.id)
-		handleError(err)
+	if parallel {
+		var wg sync.WaitGroup
+
+		for index, tweet := range tweets {
+			wg.Add(1)
+
+			go func (tweet Tweet, index int) {
+				addToFirebaseApp(tweet, index, firebase, aggregateId)
+
+				// Throttling
+				time.Sleep(1 * time.Second)
+				defer wg.Done()
+			}(tweet, index)
+		}
+
+		wg.Wait()
+
+		return
+	}
+
+	for index, tweet := range tweets {
+		addToFirebaseApp(tweet, index, firebase, aggregateId)
 	}
 }
 
-func insertTweetIntoWriteDatabase(tweet Tweet, statement *sql.Stmt, offset int) {
-	result, err := statement.Exec(
-		tweet.id,
-		tweet.username,
-		tweet.publishedAt,
-		tweet.json)
+func addToFirebaseApp(tweet Tweet, index int, firebase *firego.Firebase, aggregateId int) {
+	var decodedApiDocument Status
+	apiDocument := []byte(tweet.json)
+
+	isValid := json.Valid(apiDocument)
+	if !isValid {
+		fmt.Printf("%s for status \"%s\"", "Invalid JSON", tweet.twitterId)
+		return
+	}
+
+	err := json.Unmarshal(apiDocument, &decodedApiDocument)
 	handleError(err)
 
-	if quiet {
-		affectedRows, err := result.RowsAffected()
-		handleError(err)
+	statusId := decodedApiDocument.Id
+	statusRef, err := firebase.Ref("highlights/" + strconv.Itoa(aggregateId) + "/" + statusId + "/" + tweet.checkedAt)
+	handleError(err)
 
-		inserts := make([]int, affectedRows)
-
-		for _ = range inserts {
-			fmt.Printf(`%d` + "\n", offset)
-		}
+	status := map[string]interface{}{
+		"id":          		tweet.id,
+		"twitterId":    	tweet.twitterId,
+		"username":    		tweet.username,
+		"text":    			tweet.tweet,
+		"url":    			tweet.url,
+		"json":        		tweet.json,
+		"publishedAt": 		tweet.publishedAt,
+		"checkedAt": 		tweet.checkedAt,
+		"isRetweet": 		tweet.isRetweet,
+		"twitter_id": 		decodedApiDocument.Id,
+		"totalRetweets":	tweet.retweets,
+		"totalFavorites":	tweet.favorites,
 	}
+
+	err = statusRef.Update(status)
+	if err != nil {
+		fmt.Printf("%s \"%s\" indexed at %d\n", "Could not migrate status", tweet.twitterId, index)
+		fmt.Printf("(%s)", err)
+		return
+	}
+
+	fmt.Printf("%s \"%s\" indexed at %d\n", "Migrated status", tweet.twitterId, index)
 }
 
 func handleError(err error) {
