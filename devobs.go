@@ -6,7 +6,8 @@ import (
 	"flag"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/ti/nasync"
+	"github.com/remeh/sizedwaitgroup"
+	_ "github.com/remeh/sizedwaitgroup"
 	_ "github.com/ti/nasync"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -17,7 +18,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"sync"
 	"time"
 )
 
@@ -57,17 +57,18 @@ type Status struct {
 }
 
 type Tweet struct {
-	id          int
-	publishedAt string
-	username    string
-	json        string
-	url         string
-	tweet       string
-	retweets    int
-	favorites   int
-	twitterId   string
-	isRetweet   bool
-	checkedAt   string
+	id           int
+	publishedAt  string
+	username     string
+	json         string
+	url          string
+	tweet        string
+	retweets     int
+	favorites    int
+	twitterId    string
+	isRetweet    bool
+	canBeRetweet bool
+	checkedAt    string
 }
 
 // See when init function is run at https://stackoverflow.com/q/24790175/282073
@@ -99,7 +100,7 @@ func init() {
 	const (
 		defaultAggregateId = 0
 		usage              = "The id of an aggregate, which tweets are to be printed out"
-		defaultLimit       = -1
+		defaultLimit       = 10
 		limitUsage         = "Maximum tweets be collected"
 		defaultPage        = 0
 		pageUsage          = "Page from where tweets are collected from"
@@ -129,11 +130,8 @@ func main() {
 
 	firebase := connectToFirebase(configuration)
 
-	queryTweets(db, firebase, aggregateId, aggregateTweetPage, aggregateTweetLimit, `DESC`)
-
-	if aggregateTweetLimit == -1 {
-		time.Sleep(maxExecutionTimeInMinutes * 60 * time.Second)
-	}
+	queryTweets(db, firebase, aggregateId, true, aggregateTweetPage, aggregateTweetLimit, `DESC`)
+	queryTweets(db, firebase, aggregateId, false, aggregateTweetPage, aggregateTweetLimit, `DESC`)
 }
 
 func removeStatuses(firebase *firego.Firebase) {
@@ -191,8 +189,20 @@ func parseConfiguration() (error, Configuration) {
 	return err, configuration
 }
 
-func queryTweets(db *sql.DB, firebase *firego.Firebase, aggregateId int, page int, limit int, sortingOrder string) {
+func queryTweets(
+	db *sql.DB,
+	firebase *firego.Firebase,
+	aggregateId int,
+	includeRetweets bool,
+	page int,
+	limit int,
+	sortingOrder string) {
 	totalHighlights := countHighlights(db, limit)
+
+	constraintOnRetweetStatus := ""
+	if includeRetweets {
+		constraintOnRetweetStatus = "AND h.is_retweet = 0"
+	}
 
 	var query string
 	query = `
@@ -202,19 +212,21 @@ func queryTweets(db *sql.DB, firebase *firego.Firebase, aggregateId int, page in
 		s.ust_text as tweet,
 		s.ust_created_at as publicationDate,
 		s.ust_api_document as Json,
-		p.total_retweets retweets,
-		p.total_favorites favorites,
+		MAX(COALESCE(p.total_retweets, h.total_retweets)) retweets,
+		MAX(COALESCE(p.total_favorites, h.total_retweets)) favorites,
 		s.ust_id as id,
 		s.ust_status_id as statusId,
 		h.is_retweet,
-		p.checked_at as checkedAt
+		COALESCE(p.checked_at, s.ust_created_at) as checkedAt
 		FROM highlight h
 		INNER JOIN weaving_status s
 		ON h.aggregate_id = ?
+		` + constraintOnRetweetStatus + `
 		AND s.ust_id = h.status_id
 		` + sinceWhen() + `
-		INNER JOIN status_popularity p
+		LEFT JOIN status_popularity p
 		ON p.status_id = h.status_id
+		GROUP BY h.status_id
 		ORDER BY retweets ` + sortingOrder
 
 	if limit > 0 {
@@ -226,7 +238,7 @@ func queryTweets(db *sql.DB, firebase *firego.Firebase, aggregateId int, page in
 
 	rows := selectTweetsWindow(limit, page, selectTweets, aggregateId, err)
 
-	migrateStatusesToFirebaseApp(rows, firebase, aggregateId, totalHighlights)
+	migrateStatusesToFirebaseApp(rows, firebase, aggregateId, includeRetweets, totalHighlights)
 }
 
 func selectTweetsWindow(limit int, page int, selectTweets *sql.Stmt, aggregateId int, err error) *sql.Rows {
@@ -256,7 +268,7 @@ func countHighlights(db *sql.DB, limit int) int {
 		ON h.aggregate_id = ?
 		AND s.ust_id = h.status_id
 		` + sinceWhen() + `
-		INNER JOIN status_popularity p
+		LEFT JOIN status_popularity p
 		ON p.status_id = h.status_id`
 
 	statement, err := db.Prepare(query)
@@ -291,13 +303,18 @@ func countHighlights(db *sql.DB, limit int) int {
 
 func sinceWhen() string {
 	if sinceAWeekAgo {
-		return `AND DATE(s.ust_created_at) > SUBDATE(DATE(NOW()), 7)`
+		return `AND DATE(DATE_SUB(s.ust_created_at, INTERVAL 1 HOUR)) > SUBDATE(DATE(NOW()), 7)`
 	}
 
-	return `AND DATE(h.publication_date_time) = ?`
+	return `AND DATE(DATE_SUB(h.publication_date_time, INTERVAL 1 HOUR)) = ?`
 }
 
-func migrateStatusesToFirebaseApp(rows *sql.Rows, firebase *firego.Firebase, aggregateId int, totalHighlights int) {
+func migrateStatusesToFirebaseApp(
+	rows *sql.Rows,
+	firebase *firego.Firebase,
+	aggregateId int,
+	includeRetweets bool,
+	totalHighlights int) {
 	columns, err := rows.Columns()
 	handleError(err)
 	values := make([]sql.RawBytes, len(columns))
@@ -317,6 +334,8 @@ func migrateStatusesToFirebaseApp(rows *sql.Rows, firebase *firego.Firebase, agg
 		var decodedApiDocument Status
 		var value string
 		var tweet Tweet
+
+		tweet.canBeRetweet = includeRetweets
 
 		for i, col := range values {
 			value = string(col)
@@ -386,22 +405,33 @@ func migrateStatusesToFirebaseApp(rows *sql.Rows, firebase *firego.Firebase, agg
 
 	fmt.Printf("\n")
 
-	if parallel {
-		async := nasync.New(100,100)
-		defer async.Close()
+	var statusType string
+	statusType = "status"
+	if includeRetweets {
+		statusType = "retweet"
+	}
 
-		var wg sync.WaitGroup
+	path := "highlights/" + strconv.Itoa(aggregateId) + "/" + sinceDate + "/" + statusType + "/"
+	fmt.Printf("About to remove %s\n", path)
+	statusRef, err := firebase.Ref(path)
+	handleError(err)
+
+	err = statusRef.Remove()
+	handleError(err)
+
+	if parallel {
+		swg := sizedwaitgroup.New(100)
 
 		for index, tweet := range tweets {
-			wg.Add(1)
+			swg.Add()
 
-			async.Do(func (tweet Tweet, index int) {
+			go (func (tweet Tweet, index int) {
+				defer swg.Done()
 				addToFirebaseApp(tweet, index, firebase, aggregateId)
-				defer wg.Done()
-			}, tweet, index)
+			})(tweet, index)
 		}
 
-		wg.Wait()
+		swg.Wait()
 
 		return
 	}
@@ -428,12 +458,12 @@ func addToFirebaseApp(tweet Tweet, index int, firebase *firego.Firebase, aggrega
 
 	var statusType string
 	statusType = "status"
-	if tweet.isRetweet {
+	if tweet.canBeRetweet {
 		statusType = "retweet"
 	}
 
 	statusRef, err := firebase.Ref("highlights/" + strconv.Itoa(aggregateId) + "/" + sinceDate + "/" +
-		statusType + "/" + tweet.checkedAt + "/" + statusId)
+		statusType + "/" + statusId)
 	handleError(err)
 
 	status := map[string]interface{}{
