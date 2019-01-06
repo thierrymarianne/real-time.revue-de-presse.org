@@ -200,7 +200,7 @@ func queryTweets(
 	totalHighlights := countHighlights(db, limit)
 
 	constraintOnRetweetStatus := ""
-	if includeRetweets {
+	if !includeRetweets {
 		constraintOnRetweetStatus = "AND h.is_retweet = 0"
 	}
 
