@@ -33,6 +33,11 @@ go install github.com/daily-press-review-golang
 ./daily-press-review-golang -aggregate-id=1 -since-date=2019-01-02 -in-parallel=true
 ```
 
+```
+How to migrate a year?
+
+```
+
 ## References
 
 [https://console.firebase.google.com/u/1/project/weaving-the-web-6fe11/settings/serviceaccounts/adminsdk](Firebase Admin SDK)
