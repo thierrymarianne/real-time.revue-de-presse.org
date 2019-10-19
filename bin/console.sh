@@ -45,12 +45,10 @@ function install_dependencies() {
     go get -u golang.org/x/oauth2
     go get -u gopkg.in/zabawaba99/firego.v1
     go get -u github.com/ti/nasync
+    go get -u github.com/remeh/sizedwaitgroup
 }
 
 function build_application() {
-    go build github.com/devobs-realtime-database
-}
-
-function install_application() {
-    go install github.com/devobs-realtime-database
+    test -e ./devobs-realtime-database && rm ./devobs-realtime-database
+    go build .
 }
