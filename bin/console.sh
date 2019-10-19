@@ -34,7 +34,7 @@ function download_golang() {
 }
 
 function install_dependencies() {
-    if [ ! "$(which go >> /dev/null)" ];
+    if ! $(\which go >> /dev/null);
     then
         echo 'Could not find go binary in $PATH';
         return 1
