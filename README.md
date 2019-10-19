@@ -40,4 +40,5 @@ How to migrate a year?
 
 ## References
 
-[https://console.firebase.google.com/u/1/project/weaving-the-web-6fe11/settings/serviceaccounts/adminsdk](Firebase Admin SDK)
+[Firebase Admin SDK](https://console.firebase.google.com)
+
