@@ -1,4 +1,4 @@
-# Daily Press Review
+# DevObs
 
 ## Dependencies
 
@@ -16,26 +16,22 @@ go get -u github.com/ti/nasync
 
 ```
 # Build application
-go build github.com/daily-press-review-golang
+go build github.com/devobs-realtime-database
 ```
 
 ## Installation
 
 ```
 # Install project from repository clone in file system
-go install github.com/daily-press-review-golang
+go install github.com/devobs-realtime-database
 ```
 
 ## Run
 
 ```
 # Migrate statuses from the first aggregate
-./daily-press-review-golang -aggregate-id=1 -since-date=2019-01-02 -in-parallel=true
-```
-
-```
-How to migrate a year?
-
+export aggregate_id="__FILL_ME_WITH_A_NUMBER__"
+./devobs-realtime-database -aggregate-id="${aggregate_id}" -since-date=2019-01-02 -in-parallel=true
 ```
 
 ## References
