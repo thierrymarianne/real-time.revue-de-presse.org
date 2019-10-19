@@ -1,5 +1,38 @@
 #!/bin/bash
 
+function download_golang() {
+    local target_dir
+    target_dir="${1}"
+
+    local version='1.13.3.linux-amd64'
+
+    if [ -z "${target_dir}" ];
+    then
+        echo 'Please pass a target dir as first argument'
+        echo 'export TARGET_DIR=/usr/local && make download-golang'
+        return 1
+    fi
+
+    local path
+    path="/tmp/go${version}.tar.gz"
+    if [ ! -e "${path}" ];
+    then
+      # @requires wget
+      wget "https://dl.google.com/go/go${version}.tar.gz" \
+      -O "${path}"
+    fi
+
+    echo "$(\cat "./bin/go${version}.asc") ${path}" | sha256sum -c &&
+    tar -xvzf "${path}"
+
+    if [ ! -d "${target_dir}" ];
+    then
+        mv go "${target_dir}"
+    fi
+
+    rm "${path}"
+}
+
 function install_dependencies() {
     if [ ! "$(which go >> /dev/null)" ];
     then
