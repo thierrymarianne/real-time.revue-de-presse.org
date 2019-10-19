@@ -9,3 +9,6 @@ help:
 
 download-golang: ## Download golang binary
 		@/bin/bash -c 'source ./bin/console.sh && download_golang '"${TARGET_DIR}"
+
+install-dependencies: ## Install application dependencies
+		@/bin/bash -c 'source ./bin/console.sh && install_dependencies'
