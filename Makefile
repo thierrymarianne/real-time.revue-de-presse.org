@@ -12,3 +12,9 @@ download-golang: ## Download golang binary
 
 install-dependencies: ## Install application dependencies
 		@/bin/bash -c 'source ./bin/console.sh && install_dependencies'
+
+build-application: ## Build application
+		@/bin/bash -c 'source ./bin/console.sh && build_application'
+
+install-application: ## Install application
+		@/bin/bash -c 'source ./bin/console.sh && install_application'
