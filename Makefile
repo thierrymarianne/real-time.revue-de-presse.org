@@ -5,25 +5,25 @@ SHELL:=/bin/bash
 .PHONY: help
 
 help:
-    @grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 build-worker: ## Build worker docker image
-    @/bin/bash -c 'source ./bin/console.sh && build_worker_container'
+	@/bin/bash -c 'source ./bin/console.sh && build_worker_container'
 
 create-network: ## Create Docker network
-    @/bin/bash -c 'source ./bin/console.sh && create_network'
+	@/bin/bash -c 'source ./bin/console.sh && create_network'
 
 run-worker: ## Run a worker container
-    @/bin/bash -c 'source ./bin/console.sh && run_worker_container ${AGGREGATE_ID} ${SINCE_DATE}'
+	@/bin/bash -c 'source ./bin/console.sh && run_worker_container ${AGGREGATE_ID} ${SINCE_DATE}'
 
 download-golang: ## Download golang binary
-    @/bin/bash -c 'source ./bin/console.sh && download_golang '"${TARGET_DIR}"
+	@/bin/bash -c 'source ./bin/console.sh && download_golang '"${TARGET_DIR}"
 
 install-dependencies: ## Install application dependencies
-    @/bin/bash -c 'source ./bin/console.sh && install_dependencies'
+	@/bin/bash -c 'source ./bin/console.sh && install_dependencies'
 
 build-application: ## Build application
-    @/bin/bash -c 'source ./bin/console.sh && build_application'
+	@/bin/bash -c 'source ./bin/console.sh && build_application'
 
 install-application: ## Install application
-    @/bin/bash -c 'source ./bin/console.sh && install_application'
+	@/bin/bash -c 'source ./bin/console.sh && install_application'
