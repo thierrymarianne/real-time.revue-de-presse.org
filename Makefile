@@ -10,6 +10,9 @@ help:
 build-worker: ## Build worker docker image
 		@/bin/bash -c 'source ./bin/console.sh && build_worker_container'
 
+create-network: ## Create Docker network
+        @/bin/bash -c 'source ./bin/console.sh && create_network'
+
 run-worker: ## Run a worker container
 		@/bin/bash -c 'source ./bin/console.sh && run_worker_container ${AGGREGATE_ID} ${SINCE_DATE}'
 
