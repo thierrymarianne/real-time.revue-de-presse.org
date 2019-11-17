@@ -1,5 +1,49 @@
 #!/bin/bash
 
+function get_application_prefix() {
+    echo 'devobs-realtime-database'
+}
+
+function get_container_name_for() {
+    local target
+    target="${1}"
+
+    local application_prefix
+    application_prefix="$(get_application_prefix)-"
+
+    echo "${application_prefix}${target}"
+}
+
+function get_image_name_for() {
+    local target
+    target="${1}"
+
+    local application_prefix
+    application_prefix="$(get_application_prefix)-"
+
+    echo "${application_prefix}${target}"
+}
+
+function get_docker_network() {
+    echo 'devobs-api'
+}
+
+function create_network() {
+    local network
+    network="$(get_docker_network)"
+    /bin/bash -c 'docker network create '"${network}"
+}
+
+function get_network_option() {
+    network='--network "'$(get_docker_network)'" '
+    if [ ! -z "${NO_DOCKER_NETWORK}" ];
+    then
+        network=''
+    fi
+
+    echo "${network}";
+}
+
 function download_golang() {
     local target_dir
     target_dir="${1}"
@@ -31,6 +75,38 @@ function download_golang() {
     fi
 
     rm "${path}"
+}
+
+function build_worker_container() {
+    docker build -t "$(get_image_name_for "worker")" .
+}
+
+function run_worker_container() {
+    local container_name
+    container_name=$(get_container_name_for "worker")
+
+    # ensure no container is running under the same name
+    docker ps -a | grep "${container_name}" | \
+    awk '{print $1}' | tail -n1 | xargs -I{} docker rm -f {}
+
+    local network_option
+    network_option="$(get_network_option)"
+
+    local image_name
+    image_name=$(get_image_name_for "worker")
+
+    local command
+    command=$(cat << COMMAND
+docker run -it \
+--rm \
+${network_option} \
+--name ${container_name} \
+${image_name}
+COMMAND
+)
+
+    echo 'About to run the following command "'${command}'"'
+    /bin/bash -c "${command}"
 }
 
 function install_dependencies() {
