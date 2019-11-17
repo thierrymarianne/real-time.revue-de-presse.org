@@ -25,6 +25,12 @@ function get_image_name_for() {
 }
 
 function get_docker_network() {
+    if [ ! -z "${DEVOBS_NETWORK}" ]
+    then
+        echo "${DEVOBS_NETWORK}"
+        return
+    fi
+
     echo 'devobs-api'
 }
 
