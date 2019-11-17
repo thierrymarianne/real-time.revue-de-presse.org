@@ -82,6 +82,28 @@ function build_worker_container() {
 }
 
 function run_worker_container() {
+    local aggregate_id
+    aggregate_id="${1}"
+
+    local date
+    date="${2}"
+
+    if [ -z "${aggregate_id}" ];
+    then
+      echo 'Please provide a aggregated id as a first argument.'
+      echo 'or export an environment variable e.g.'
+      echo 'export AGGREGATE_ID=858'
+      return 1
+    fi
+
+    if [ -z "${date}" ];
+    then
+      echo 'Please provide a valid date as a second argument'
+      echo 'or export an environment variable e.g.'
+      echo 'export SINCE_DATE=2019-12-25'
+      return 1
+    fi
+
     local container_name
     container_name=$(get_container_name_for "worker")
 
@@ -101,7 +123,11 @@ docker run -it \
 --rm \
 ${network_option} \
 --name ${container_name} \
-${image_name}
+${image_name} \
+devobs-realtime-database \
+-aggregate-id=${aggregate_id} \
+-since-date=${date} \
+-in-parallel=true
 COMMAND
 )
 

@@ -11,7 +11,7 @@ build-worker: ## Build worker docker image
 		@/bin/bash -c 'source ./bin/console.sh && build_worker_container'
 
 run-worker: ## Run a worker container
-		@/bin/bash -c 'source ./bin/console.sh && run_worker_container'
+		@/bin/bash -c 'source ./bin/console.sh && run_worker_container ${AGGREGATE_ID} ${SINCE_DATE}'
 
 download-golang: ## Download golang binary
 		@/bin/bash -c 'source ./bin/console.sh && download_golang '"${TARGET_DIR}"
