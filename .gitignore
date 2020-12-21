@@ -1,2 +1,3 @@
 config.json
 config.firebase.json
+bin/*
