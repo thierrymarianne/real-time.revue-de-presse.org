@@ -11,7 +11,7 @@ function install_dependencies() {
 alias install-deps='install_dependencies'
 
 function build_application() {
-    go build github.com/daily-press-review-golang
+    go build .
 }
 alias build-application='build_application'
 

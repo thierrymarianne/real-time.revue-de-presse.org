@@ -159,10 +159,10 @@ func connectToMySqlDatabase(configuration Configuration) *sql.DB {
 }
 
 func connectToFirebase(configuration Configuration) *firego.Firebase {
-	dir, err := filepath.Abs(os.Getenv("GOPATH"))
+	dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
 	handleError(err)
 
-	file, err := ioutil.ReadFile(dir + `/config.firebase.json`)
+	file, err := ioutil.ReadFile(dir + `/../config.firebase.json`)
 	handleError(err)
 
 	conf, err := google.JWTConfigFromJSON(file, "https://www.googleapis.com/auth/userinfo.email",
@@ -175,10 +175,10 @@ func connectToFirebase(configuration Configuration) *firego.Firebase {
 }
 
 func parseConfiguration() (error, Configuration) {
-	dir, err := filepath.Abs(os.Getenv("GOPATH"))
+	dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
 	handleError(err)
 
-	file, err := os.Open(dir + `/config.json`)
+	file, err := os.Open(dir + `/../config.json`)
 	handleError(err)
 
 	decoder := json.NewDecoder(file)
@@ -226,6 +226,16 @@ func queryTweets(
 		` + sinceWhen() + `
 		LEFT JOIN status_popularity p
 		ON p.status_id = h.status_id
+		-- Prevent publications by deleted members from being fetched
+		WHERE
+		h.member_id NOT IN (
+			SELECT usr_id
+			FROM weaving_user member,
+			weaving_aggregate publication_list
+			WHERE publication_list.deleted_at IS NOT NULL
+			AND member.usr_twitter_username = publication_list.screen_name
+			AND publication_list.screen_name IS NOT NULL
+		) 
 		GROUP BY h.status_id
 		ORDER BY retweets ` + sortingOrder
 
