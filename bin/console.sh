@@ -160,3 +160,46 @@ function build_application() {
     test -e ./devobs-realtime-database && rm ./devobs-realtime-database
     go build .
 }
+
+function install_dependencies() {
+    go get -u github.com/go-sql-driver/mysql
+    go get -u cloud.google.com/go/compute/metadata
+    go get -u golang.org/x/oauth2
+    go get -u gopkg.in/zabawaba99/firego.v1
+    go get -u github.com/ti/nasync
+    go get -u github.com/remeh/sizedwaitgroup
+}
+alias install-deps='install_dependencies'
+
+function build_application() {
+    go build -o ./bin
+}
+alias build-application='build_application'
+
+function migrate_publications() {
+    local date
+    date="${SINCE_DATE}"
+
+    if [ -z "${date}" ];
+    then
+       echo 'Please pass a valid date e.g.'
+       echo 'export SINCE_DATE=`date -I`'
+
+       return 1
+    fi
+
+    local publishers_list_id
+    publishers_list_id="${PUBLISHERS_LIST_ID}"
+
+    if [ -z "${publishers_list_id}" ];
+    then
+       echo 'Please pass a valid publishers list id e.g.'
+       echo 'export PUBLISHERS_LIST_ID="89f6db28-4d4e-49dc-a2c6-b6bb0e7b12af"'
+
+       return 1
+    fi
+
+    # Migrate statuses from the first aggregate
+    ./bin/devobs-realtime-database -publishers-list-id="${publishers_list_id}" -since-date="${date}" -in-parallel=true
+}
+alias migrate-publications='migrate_publications'

@@ -19,11 +19,17 @@ run-worker: ## Run a worker container
 download-golang: ## Download golang binary
 	@/bin/bash -c 'source ./bin/console.sh && download_golang '"${TARGET_DIR}"
 
-install-dependencies: ## Install application dependencies
-	@/bin/bash -c 'source ./bin/console.sh && install_dependencies'
-
 build-application: ## Build application
 	@/bin/bash -c 'source ./bin/console.sh && build_application'
 
 install-application: ## Install application
 	@/bin/bash -c 'source ./bin/console.sh && install_application'
+
+build: ## Build application
+	@/bin/bash -c 'source ./bin/console.sh && build_application'
+
+install: ## Install application
+	@/bin/bash -c 'source ./bin/console.sh && install_application'
+
+migrate-publications: ## Migrate publications
+	@/bin/bash -c 'source ./bin/console.sh && migrate_publications'

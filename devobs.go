@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 	"github.com/remeh/sizedwaitgroup"
 	_ "github.com/remeh/sizedwaitgroup"
 	_ "github.com/ti/nasync"
@@ -28,7 +28,7 @@ var sinceDate string
 var sinceAWeekAgo bool
 var parallel bool
 var quiet bool
-var aggregateId int
+var publishersListId string
 var aggregateTweetPage int
 var aggregateTweetLimit int
 
@@ -98,8 +98,7 @@ func init() {
 
 func init() {
 	const (
-		defaultAggregateId = 0
-		usage              = "The id of an aggregate, which tweets are to be printed out"
+		usage              = "The id of an publishers list, which tweets are to be printed out"
 		defaultLimit       = 10
 		limitUsage         = "Maximum tweets be collected"
 		defaultPage        = 0
@@ -107,10 +106,10 @@ func init() {
 		defaultQuiet       = true
 		quietUsage         = "Quiet mode"
 		defaultParallel    = true
-		parallelUsage         = "Run in parallel"
+		parallelUsage      = "Run in parallel"
 	)
 
-	flag.IntVar(&aggregateId, "aggregate-id", defaultAggregateId, usage)
+	flag.StringVar(&publishersListId, "publishers-list-id", "89f6db28-4d4e-49dc-a2c6-b6bb0e7b12af", usage)
 	flag.IntVar(&aggregateTweetLimit, "limit", defaultLimit, limitUsage)
 	flag.IntVar(&aggregateTweetPage, "page", defaultPage, pageUsage)
 	flag.BoolVar(&quiet, "quiet", defaultQuiet, quietUsage)
@@ -123,15 +122,15 @@ func main() {
 	err, configuration := parseConfiguration()
 	handleError(err)
 
-	db := connectToMySqlDatabase(configuration)
+	db := connectToDatabase(configuration)
 
 	// "defer" keyword is described at https://tour.golang.org/flowcontrol/12
 	defer db.Close()
 
 	firebase := connectToFirebase(configuration)
 
-	queryTweets(db, firebase, aggregateId, true, aggregateTweetPage, aggregateTweetLimit, `DESC`)
-	queryTweets(db, firebase, aggregateId, false, aggregateTweetPage, aggregateTweetLimit, `DESC`)
+	queryTweets(db, firebase, publishersListId, true, aggregateTweetPage, aggregateTweetLimit, `DESC`)
+	queryTweets(db, firebase, publishersListId, false, aggregateTweetPage, aggregateTweetLimit, `DESC`)
 }
 
 func removeStatuses(firebase *firego.Firebase) {
@@ -148,21 +147,21 @@ func formatTodayDate() string {
 	return today.Format("2006-01-02")
 }
 
-func connectToMySqlDatabase(configuration Configuration) *sql.DB {
-	dsn := configuration.Read_user + string(`:`) + configuration.Read_password +
-		string(`@(`+configuration.Read_protocol_host_port+`)/`) +
-		configuration.Read_database + `?charset=utf8mb4`
-	db, err := sql.Open("mysql", dsn)
+func connectToDatabase(configuration Configuration) *sql.DB {
+	dsn := "postgres://" + configuration.Read_user + string(`:`) + configuration.Read_password +
+		`@` + configuration.Read_protocol_host_port + `/` +
+		configuration.Read_database + `?sslmode=disable`
+	db, err := sql.Open("postgres", dsn)
 	handleError(err)
 
 	return db
 }
 
 func connectToFirebase(configuration Configuration) *firego.Firebase {
-	dir, err := filepath.Abs(os.Getenv("GOPATH"))
+	dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
 	handleError(err)
 
-	file, err := ioutil.ReadFile(dir + `/config.firebase.json`)
+	file, err := ioutil.ReadFile(dir + `/../config.firebase.json`)
 	handleError(err)
 
 	conf, err := google.JWTConfigFromJSON(file, "https://www.googleapis.com/auth/userinfo.email",
@@ -175,10 +174,10 @@ func connectToFirebase(configuration Configuration) *firego.Firebase {
 }
 
 func parseConfiguration() (error, Configuration) {
-	dir, err := filepath.Abs(os.Getenv("GOPATH"))
+	dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
 	handleError(err)
 
-	file, err := os.Open(dir + `/config.json`)
+	file, err := os.Open(dir + `/../config.json`)
 	handleError(err)
 
 	decoder := json.NewDecoder(file)
@@ -192,7 +191,7 @@ func parseConfiguration() (error, Configuration) {
 func queryTweets(
 	db *sql.DB,
 	firebase *firego.Firebase,
-	aggregateId int,
+	publishersListId string,
 	includeRetweets bool,
 	page int,
 	limit int,
@@ -201,13 +200,13 @@ func queryTweets(
 
 	constraintOnRetweetStatus := ""
 	if !includeRetweets {
-		constraintOnRetweetStatus = "AND h.is_retweet = 0"
+		constraintOnRetweetStatus = "AND h.is_retweet = false"
 	}
 
 	var query string
 	query = `
 		SELECT
-		CONCAT("https://twitter.com/", ust_full_name, "/status/", ust_status_id) as url,
+		CONCAT('https://twitter.com/', ust_full_name, '/status/', ust_status_id) as url,
 		s.ust_full_name as username,
 		s.ust_text as tweet,
 		s.ust_created_at as publicationDate,
@@ -220,38 +219,60 @@ func queryTweets(
 		COALESCE(p.checked_at, s.ust_created_at) as checkedAt
 		FROM highlight h
 		INNER JOIN weaving_status s
-		ON h.aggregate_id = ?
-		` + constraintOnRetweetStatus + `
-		AND s.ust_id = h.status_id
+		ON s.ust_id = h.status_id
 		` + sinceWhen() + `
+		` + constraintOnRetweetStatus + `
+
+		INNER JOIN publishers_list
+		ON h.aggregate_id = publishers_list.id
+		AND publishers_list.public_id = $2
 		LEFT JOIN status_popularity p
 		ON p.status_id = h.status_id
-		GROUP BY h.status_id
+		-- Prevent publications by deleted members from being fetched
+		WHERE
+		h.member_id NOT IN (
+			SELECT usr_id
+			FROM weaving_user member,
+			publishers_list publication_list
+			WHERE publication_list.deleted_at IS NOT NULL
+			AND member.usr_twitter_username = publication_list.screen_name
+			AND publication_list.screen_name IS NOT NULL
+		) 
+		GROUP BY 
+		h.status_id,
+		CONCAT('https://twitter.com/', ust_full_name, '/status/', ust_status_id),
+		s.ust_full_name,
+		s.ust_text,
+		s.ust_created_at,
+		s.ust_api_document,
+		s.ust_id,
+		h.is_retweet,
+		COALESCE(p.checked_at, s.ust_created_at)
 		ORDER BY retweets ` + sortingOrder
 
 	if limit > 0 {
-		query = query + ` LIMIT ?,?`
+		query = query + ` OFFSET $3 LIMIT $4`
 	}
 
 	selectTweets, err := db.Prepare(query)
 	handleError(err)
 
-	rows := selectTweetsWindow(limit, page, selectTweets, aggregateId, err)
+	rows := selectTweetsWindow(limit, page, selectTweets, publishersListId, err)
 
-	migrateStatusesToFirebaseApp(rows, firebase, aggregateId, includeRetweets, totalHighlights)
+	migrateStatusesToFirebaseApp(rows, firebase, publishersListId, includeRetweets, totalHighlights)
 }
 
-func selectTweetsWindow(limit int, page int, selectTweets *sql.Stmt, aggregateId int, err error) *sql.Rows {
+func selectTweetsWindow(limit int, page int, selectTweets *sql.Stmt, publishersListId string, err error) *sql.Rows {
 	if limit > 0 {
 		offset := page * tweetPerPage
 		itemsPerPage := limit
-		rows, err := selectTweets.Query(aggregateId, sinceDate, offset, itemsPerPage)
+		rows, err := selectTweets.Query(sinceDate, publishersListId, offset, itemsPerPage)
 		handleError(err)
 
 		return rows
 	}
 
-	rows, err := selectTweets.Query(aggregateId, sinceDate)
+	rows, err := selectTweets.Query(sinceDate, publishersListId)
 	handleError(err)
 
 	return rows
@@ -265,16 +286,17 @@ func countHighlights(db *sql.DB, limit int) int {
 		SELECT COUNT(*) highlights
 		FROM highlight h
 		INNER JOIN weaving_status s
-		ON h.aggregate_id = ?
-		AND s.ust_id = h.status_id
+		ON 
+		s.ust_id = h.status_id
 		` + sinceWhen() + `
+		AND h.aggregate_id = $2
 		LEFT JOIN status_popularity p
 		ON p.status_id = h.status_id`
 
 	statement, err := db.Prepare(query)
 	handleError(err)
 
-	highlightsCount, err := statement.Query(aggregateId, sinceDate)
+	highlightsCount, err := statement.Query(sinceDate, publishersListId)
 	handleError(err)
 
 	columns, err := highlightsCount.Columns()
@@ -303,16 +325,16 @@ func countHighlights(db *sql.DB, limit int) int {
 
 func sinceWhen() string {
 	if sinceAWeekAgo {
-		return `AND DATE(DATE_SUB(s.ust_created_at, INTERVAL 1 HOUR)) > SUBDATE(DATE(NOW()), 7)`
+		return `AND s.ust_created_at::timestamp - '1 HOUR'::interval > NOW()::now - '7 DAYS::interval'`
 	}
 
-	return `AND DATE(DATE_SUB(h.publication_date_time, INTERVAL 1 HOUR)) = ?`
+	return `AND (h.publication_date_time::timestamp - '1 HOUR'::interval)::date = $1`
 }
 
 func migrateStatusesToFirebaseApp(
 	rows *sql.Rows,
 	firebase *firego.Firebase,
-	aggregateId int,
+	publishersListId string,
 	includeRetweets bool,
 	totalHighlights int) {
 	columns, err := rows.Columns()
@@ -411,7 +433,7 @@ func migrateStatusesToFirebaseApp(
 		statusType = "retweet"
 	}
 
-	path := "highlights/" + strconv.Itoa(aggregateId) + "/" + sinceDate + "/" + statusType + "/"
+	path := "highlights/" + publishersListId + "/" + sinceDate + "/" + statusType + "/"
 	fmt.Printf("About to remove %s\n", path)
 	statusRef, err := firebase.Ref(path)
 	handleError(err)
@@ -425,9 +447,9 @@ func migrateStatusesToFirebaseApp(
 		for index, tweet := range tweets {
 			swg.Add()
 
-			go (func (tweet Tweet, index int) {
+			go (func(tweet Tweet, index int) {
 				defer swg.Done()
-				addToFirebaseApp(tweet, index, firebase, aggregateId)
+				addToFirebaseApp(tweet, index, firebase, publishersListId)
 			})(tweet, index)
 		}
 
@@ -437,11 +459,11 @@ func migrateStatusesToFirebaseApp(
 	}
 
 	for index, tweet := range tweets {
-		addToFirebaseApp(tweet, index, firebase, aggregateId)
+		addToFirebaseApp(tweet, index, firebase, publishersListId)
 	}
 }
 
-func addToFirebaseApp(tweet Tweet, index int, firebase *firego.Firebase, aggregateId int) {
+func addToFirebaseApp(tweet Tweet, index int, firebase *firego.Firebase, publishersListId string) {
 	var decodedApiDocument Status
 	apiDocument := []byte(tweet.json)
 
@@ -462,23 +484,23 @@ func addToFirebaseApp(tweet Tweet, index int, firebase *firego.Firebase, aggrega
 		statusType = "retweet"
 	}
 
-	statusRef, err := firebase.Ref("highlights/" + strconv.Itoa(aggregateId) + "/" + sinceDate + "/" +
+	statusRef, err := firebase.Ref("highlights/" + publishersListId + "/" + sinceDate + "/" +
 		statusType + "/" + statusId)
 	handleError(err)
 
 	status := map[string]interface{}{
-		"id":          		tweet.id,
-		"twitterId":    	tweet.twitterId,
-		"username":    		tweet.username,
-		"text":    			tweet.tweet,
-		"url":    			tweet.url,
-		"json":        		tweet.json,
-		"publishedAt": 		tweet.publishedAt,
-		"checkedAt": 		tweet.checkedAt,
-		"isRetweet": 		tweet.isRetweet,
-		"twitter_id": 		decodedApiDocument.Id,
-		"totalRetweets":	tweet.retweets,
-		"totalFavorites":	tweet.favorites,
+		"id":             tweet.id,
+		"twitterId":      tweet.twitterId,
+		"username":       tweet.username,
+		"text":           tweet.tweet,
+		"url":            tweet.url,
+		"json":           tweet.json,
+		"publishedAt":    tweet.publishedAt,
+		"checkedAt":      tweet.checkedAt,
+		"isRetweet":      tweet.isRetweet,
+		"twitter_id":     decodedApiDocument.Id,
+		"totalRetweets":  tweet.retweets,
+		"totalFavorites": tweet.favorites,
 	}
 
 	err = statusRef.Update(status)

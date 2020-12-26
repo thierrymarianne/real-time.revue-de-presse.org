@@ -1,2 +1,5 @@
 *.json
 **database
+config.json
+config.firebase.json
+bin/devobs-*
