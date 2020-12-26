@@ -131,7 +131,7 @@ ${network_option} \
 --name ${container_name} \
 ${image_name} \
 devobs-realtime-database \
--aggregate-id=${aggregate_id} \
+-publishers-list-id=${aggregate_id} \
 -since-date=${date} \
 -in-parallel=true
 COMMAND
