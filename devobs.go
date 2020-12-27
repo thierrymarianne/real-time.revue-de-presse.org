@@ -222,7 +222,6 @@ func queryTweets(
 		ON s.ust_id = h.status_id
 		` + sinceWhen() + `
 		` + constraintOnRetweetStatus + `
-
 		INNER JOIN publishers_list
 		ON h.aggregate_id = publishers_list.id
 		AND publishers_list.public_id = $2
@@ -289,7 +288,9 @@ func countHighlights(db *sql.DB, limit int) int {
 		ON 
 		s.ust_id = h.status_id
 		` + sinceWhen() + `
-		AND h.aggregate_id = $2
+		INNER JOIN publishers_list
+		ON h.aggregate_id = publishers_list.id
+		AND publishers_list.public_id = $2
 		LEFT JOIN status_popularity p
 		ON p.status_id = h.status_id`
 

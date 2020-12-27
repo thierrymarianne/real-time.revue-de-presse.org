@@ -13,9 +13,6 @@ build-worker: ## Build worker docker image
 create-network: ## Create Docker network
 	@/bin/bash -c 'source ./bin/console.sh && create_network'
 
-run-worker: ## Run a worker container
-	@/bin/bash -c 'source ./bin/console.sh && run_worker_container ${AGGREGATE_ID} ${SINCE_DATE}'
-
 download-golang: ## Download golang binary
 	@/bin/bash -c 'source ./bin/console.sh && download_golang '"${TARGET_DIR}"
 
@@ -32,4 +29,4 @@ install: ## Install application
 	@/bin/bash -c 'source ./bin/console.sh && install_application'
 
 migrate-publications: ## Migrate publications
-	@/bin/bash -c 'source ./bin/console.sh && migrate_publications'
+	@/bin/bash -c "source ./bin/console.sh && run_worker_container ${PUBLISHERS_LIST_ID} ${SINCE_DATE}"

@@ -21,7 +21,13 @@ function get_image_name_for() {
     local application_prefix
     application_prefix="$(get_application_prefix)-"
 
-    echo "${application_prefix}${target}"
+    local work_directory
+    work_directory="$(pwd)"
+
+    local suffix
+    suffix="-$(echo "${work_directory}" | sha1sum | tail -c12 | awk '{print $1}')"
+
+    echo "${application_prefix}${target}${suffix}"
 }
 
 function get_docker_network() {
@@ -42,7 +48,7 @@ function create_network() {
 
 function get_network_option() {
     network='--network "'$(get_docker_network)'" '
-    if [ ! -z "${NO_DOCKER_NETWORK}" ];
+    if [ -n "${NO_DOCKER_NETWORK}" ];
     then
         network=''
     fi
@@ -88,26 +94,26 @@ function build_worker_container() {
 }
 
 function run_worker_container() {
-    local aggregate_id
-    aggregate_id="${1}"
-
     local date
     date="${2}"
 
-    if [ -z "${aggregate_id}" ];
+    local publishers_list_id
+    publishers_list_id="${1}"
+
+    if [ -z "${publishers_list_id}" ];
     then
-      echo 'Please provide a aggregated id as a first argument.'
-      echo 'or export an environment variable e.g.'
-      echo 'export AGGREGATE_ID=858'
-      return 1
+        echo 'Please provide a aggregated id as a first argument.'
+        echo 'or export an environment variable e.g.'
+        echo 'export PUBLISHERS_LIST_ID="89f6db28-4d4e-49dc-a2c6-b6bb0e7b12af"'
+        return 1
     fi
 
     if [ -z "${date}" ];
     then
-      echo 'Please provide a valid date as a second argument'
-      echo 'or export an environment variable e.g.'
-      echo 'export SINCE_DATE=2019-12-25'
-      return 1
+        echo 'Please provide a valid date as a second argument'
+        echo 'or export an environment variable e.g.'
+        echo 'export SINCE_DATE=2019-12-25'
+        return 1
     fi
 
     local container_name
@@ -130,8 +136,8 @@ docker run -it \
 ${network_option} \
 --name ${container_name} \
 ${image_name} \
-devobs-realtime-database \
--publishers-list-id=${aggregate_id} \
+bin/devobs-realtime-database \
+-publishers-list-id="${publishers_list_id}" \
 -since-date=${date} \
 -in-parallel=true
 COMMAND
@@ -141,65 +147,12 @@ COMMAND
     /bin/bash -c "${command}"
 }
 
-function install_dependencies() {
-    if ! $(\which go >> /dev/null);
-    then
-        echo 'Could not find go binary in $PATH';
-        return 1
-    fi
-
-    go get -u github.com/go-sql-driver/mysql
-    go get -u cloud.google.com/go/compute/metadata
-    go get -u golang.org/x/oauth2
-    go get -u gopkg.in/zabawaba99/firego.v1
-    go get -u github.com/ti/nasync
-    go get -u github.com/remeh/sizedwaitgroup
-}
-
 function build_application() {
     test -e ./devobs-realtime-database && rm ./devobs-realtime-database
     go build .
 }
 
-function install_dependencies() {
-    go get -u github.com/go-sql-driver/mysql
-    go get -u cloud.google.com/go/compute/metadata
-    go get -u golang.org/x/oauth2
-    go get -u gopkg.in/zabawaba99/firego.v1
-    go get -u github.com/ti/nasync
-    go get -u github.com/remeh/sizedwaitgroup
-}
-alias install-deps='install_dependencies'
-
 function build_application() {
     go build -o ./bin
 }
 alias build-application='build_application'
-
-function migrate_publications() {
-    local date
-    date="${SINCE_DATE}"
-
-    if [ -z "${date}" ];
-    then
-       echo 'Please pass a valid date e.g.'
-       echo 'export SINCE_DATE=`date -I`'
-
-       return 1
-    fi
-
-    local publishers_list_id
-    publishers_list_id="${PUBLISHERS_LIST_ID}"
-
-    if [ -z "${publishers_list_id}" ];
-    then
-       echo 'Please pass a valid publishers list id e.g.'
-       echo 'export PUBLISHERS_LIST_ID="89f6db28-4d4e-49dc-a2c6-b6bb0e7b12af"'
-
-       return 1
-    fi
-
-    # Migrate statuses from the first aggregate
-    ./bin/devobs-realtime-database -publishers-list-id="${publishers_list_id}" -since-date="${date}" -in-parallel=true
-}
-alias migrate-publications='migrate_publications'
