@@ -16,17 +16,5 @@ create-network: ## Create Docker network
 download-golang: ## Download golang binary
 	@/bin/bash -c 'source ./bin/console.sh && download_golang '"${TARGET_DIR}"
 
-build-application: ## Build application
-	@/bin/bash -c 'source ./bin/console.sh && build_application'
-
-install-application: ## Install application
-	@/bin/bash -c 'source ./bin/console.sh && install_application'
-
-build: ## Build application
-	@/bin/bash -c 'source ./bin/console.sh && build_application'
-
-install: ## Install application
-	@/bin/bash -c 'source ./bin/console.sh && install_application'
-
 migrate-publications: ## Migrate publications
 	@/bin/bash -c "source ./bin/console.sh && run_worker_container ${PUBLISHERS_LIST_ID} ${SINCE_DATE}"

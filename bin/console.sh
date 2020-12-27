@@ -146,13 +146,3 @@ COMMAND
     echo 'About to run the following command "'${command}'"'
     /bin/bash -c "${command}"
 }
-
-function build_application() {
-    test -e ./devobs-realtime-database && rm ./devobs-realtime-database
-    go build .
-}
-
-function build_application() {
-    go build -o ./bin
-}
-alias build-application='build_application'
