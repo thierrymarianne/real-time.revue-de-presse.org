@@ -216,7 +216,7 @@ func queryTweets(
 		s.ust_id as id,
 		s.ust_status_id as statusId,
 		h.is_retweet,
-		COALESCE(p.checked_at, s.ust_created_at) as checkedAt
+		s.ust_created_at as checkedAt
 		FROM highlight h
 		INNER JOIN weaving_status s
 		ON s.ust_id = h.status_id
@@ -246,7 +246,7 @@ func queryTweets(
 		s.ust_api_document,
 		s.ust_id,
 		h.is_retweet,
-		COALESCE(p.checked_at, s.ust_created_at)
+		s.ust_created_at
 		ORDER BY retweets ` + sortingOrder
 
 	if limit > 0 {
