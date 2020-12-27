@@ -131,7 +131,7 @@ function run_worker_container() {
 
     local command
     command=$(cat << COMMAND
-docker run -it \
+docker run \
 --rm \
 ${network_option} \
 --name ${container_name} \
