@@ -11,7 +11,10 @@ function get_container_name_for() {
     local application_prefix
     application_prefix="$(get_application_prefix)-"
 
-    echo "${application_prefix}${target}"
+    local suffix
+    suffix="-$(echo "${work_directory}" | sha1sum | tail -c12 | awk '{print $1}')"
+
+    echo "${application_prefix}${target}${suffix}"
 }
 
 function get_image_name_for() {
