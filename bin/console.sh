@@ -11,6 +11,9 @@ function get_container_name_for() {
     local application_prefix
     application_prefix="$(get_application_prefix)-"
 
+    local work_directory
+    work_directory="$(pwd)"
+
     local suffix
     suffix="-$(echo "${work_directory}" | sha1sum | tail -c12 | awk '{print $1}')"
 
