@@ -122,8 +122,11 @@ function run_worker_container() {
         return 1
     fi
 
+    local suffix
+    suffix="-$(echo "${publishers_list_id}-${date}" | sha1sum | tail -c12 | awk '{print $1}')"
+
     local container_name
-    container_name=$(get_container_name_for "worker")
+    container_name=$(get_container_name_for "worker")"${suffix}"
 
     # ensure no container is running under the same name
     docker ps -a | grep "${container_name}" | \
