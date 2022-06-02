@@ -1,0 +1,4 @@
+.git
+.*json
+logs/*
+Makefile

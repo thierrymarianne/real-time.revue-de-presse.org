@@ -1,4 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
 
 function get_application_prefix() {
     echo 'news-review-realtime-db'
@@ -37,19 +39,28 @@ function get_image_name_for() {
 }
 
 function get_docker_network() {
-    if [ -n "${NEWS_REVIEW_NETWORK}" ]; then
-        echo "${NEWS_REVIEW_NETWORK}"
+    if [ -z "${NEWS_REVIEW_NETWORK}" ]; then
 
-        return
+        printf 'A %s is expected as %s("%s" environment variable).%s' 'non-empty string' 'network name' 'NEWS_REVIEW_NETWORK' $'\n' 1>&2
+
+        return 1
+
     fi
 
-    echo 'export NEWS_REVIEW_NETWORK="my-networ"'
-
-    exit 1
+    echo "${NEWS_REVIEW_NETWORK}"
 }
 
 function get_network_option() {
-    network='--network "'$(get_docker_network)'" '
+    local network_name
+    network_name=$(get_docker_network)
+
+    if [ $? -gt 0 ]; then
+
+        return 1
+
+    fi
+
+    network='--network "'${network_name}'" '
     if [ -n "${NO_DOCKER_NETWORK}" ]; then
         network=''
     fi
@@ -87,9 +98,27 @@ function download_golang() {
     rm "${file_path}"
 }
 
-function build_worker_container() {
-    echo docker build -t "$(get_image_name_for "worker")" .
-    docker build -t "$(get_image_name_for "worker")" .
+function build() {
+    if [ -z "${uid}" ]; then
+
+        printf 'A %s is expected as %s ("%s" environment variable).%s' 'worker user uid' 'non-empty string' 'uid' $'\n' 1>&2
+
+        exit 1
+
+    fi
+
+    if [ -z "${gid}" ]; then
+
+        printf 'A %s is expected as %s ("%s" environment variable).%s' 'worker user uid' 'non-empty string' 'gid' $'\n' 1>&2
+
+        exit 1
+
+    fi
+
+    docker build \
+        --build-arg="uid=${uid}" \
+        --build-arg="gid=${gid}" \
+        -t "$(get_image_name_for "worker")" .
 }
 
 function run_worker_container() {
@@ -123,6 +152,14 @@ function run_worker_container() {
     local network_option
     network_option="$(get_network_option)"
 
+    if [ $? -gt 0 ]; then
+
+        echo 'Could not figure which network to run container from.' 1>&2
+
+        return 1:
+
+    fi
+
     local image_name
     image_name=$(get_image_name_for "worker")
 
@@ -144,3 +181,5 @@ COMMAND
     echo 'About to run the following command "'${command}'"'
     /bin/bash -c "${command}"
 }
+
+set +Eeuo pipefail
