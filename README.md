@@ -1,30 +1,8 @@
-# Daily Press Review
+# News review
 
-## Dependencies
-
-```
-make install-dependencies
-```
-
-## Build
+## Documentation
 
 ```
-make build
+make help
 ```
-
-## Installation
-
-```
-make install
-```
-
-## Migrate publications
-
-```
-export SINCE_DATE=`date -I` && make migrate-publications
-```
-
-## References
-
-[Firebase Admin SDK](https://console.firebase.google.com)
 

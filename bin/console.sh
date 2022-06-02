@@ -1,41 +1,146 @@
 #!/bin/bash
 
-function install_dependencies() {
-    go get -u github.com/go-sql-driver/mysql
-    go get -u cloud.google.com/go/compute/metadata
-    go get -u golang.org/x/oauth2
-    go get -u gopkg.in/zabawaba99/firego.v1
-    go get -u github.com/ti/nasync
-    go get -u github.com/remeh/sizedwaitgroup
+function get_application_prefix() {
+    echo 'news-review-realtime-db'
 }
-alias install-deps='install_dependencies'
 
-function build_application() {
-    go build .
+function get_container_name_for() {
+    local target
+    target="${1}"
+
+    local application_prefix
+    application_prefix="$(get_application_prefix)-"
+
+    local work_directory
+    work_directory="$(pwd)"
+
+    local suffix
+    suffix="-$(echo "${work_directory}" | sha1sum | tail -c12 | awk '{print $1}')"
+
+    echo "${application_prefix}${target}${suffix}"
 }
-alias build-application='build_application'
 
-function install_application() {
-    go install github.com/daily-press-review-golang
+function get_image_name_for() {
+    local target
+    target="${1}"
+
+    local application_prefix
+    application_prefix="$(get_application_prefix)-"
+
+    local work_directory
+    work_directory="$(pwd)"
+
+    local suffix
+    suffix="-$(echo "${work_directory}" | sha1sum | tail -c12 | awk '{print $1}')"
+
+    echo "${application_prefix}${target}${suffix}"
 }
-alias install-application='install_application'
 
-function migrate_publications() {
-    local date
-    date="${SINCE_DATE}"
+function get_docker_network() {
+    if [ -n "${NEWS_REVIEW_NETWORK}" ]; then
+        echo "${NEWS_REVIEW_NETWORK}"
 
-    if [ -z "${date}" ];
-    then
-       echo 'Please pass a valid date e.g.'
-       echo 'export SINCE_DATE=`date -I`'
-
-       return 1
+        return
     fi
 
-    local aggregate_id;
-    aggregate_id=1;
+    echo 'export NEWS_REVIEW_NETWORK="my-networ"'
 
-    # Migrate statuses from the first aggregate
-    ./daily-press-review-golang -aggregate-id=${aggregate_id} -since-date="${date}" -in-parallel=true
+    exit 1
 }
-alias migrate-publications='migrate_publications'
+
+function get_network_option() {
+    network='--network "'$(get_docker_network)'" '
+    if [ -n "${NO_DOCKER_NETWORK}" ]; then
+        network=''
+    fi
+
+    echo "${network}"
+}
+
+function download_golang() {
+    local target_dir
+    target_dir="${1}"
+
+    local version='1.13.3.linux-amd64'
+
+    if [ -z "${target_dir}" ]; then
+        echo 'Please pass a target dir as first argument'
+        echo 'export TARGET_DIR=/usr/local && make download-golang'
+        return 1
+    fi
+
+    local file_path
+    file_path="/tmp/go${version}.tar.gz"
+    if [ ! -e "${path}" ]; then
+        # @requires wget
+        wget "https://dl.google.com/go/go${version}.tar.gz" \
+            -O "${file_path}"
+    fi
+
+    echo "$(\cat "./bin/go${version}.asc") ${file_path}" | sha256sum -c - &&
+        tar -xvzf "${file_path}"
+
+    if [ -d "${target_dir}" ]; then
+        mv go "${target_dir}"
+    fi
+
+    rm "${file_path}"
+}
+
+function build_worker_container() {
+    echo docker build -t "$(get_image_name_for "worker")" .
+    docker build -t "$(get_image_name_for "worker")" .
+}
+
+function run_worker_container() {
+    local date
+    date="${2}"
+
+    local publishers_list_id
+    publishers_list_id="${1}"
+
+    if [ -z "${publishers_list_id}" ]; then
+        echo 'Please provide a aggregated id as a first argument.'
+        echo 'or export an environment variable e.g.'
+        echo 'export PUBLISHERS_LIST_ID="1"'
+        return 1
+    fi
+
+    if [ -z "${date}" ]; then
+        echo 'Please provide a valid date as a second argument'
+        echo 'or export an environment variable e.g.'
+        echo 'export SINCE_DATE=2019-12-25'
+        return 1
+    fi
+
+    local container_name
+    container_name=$(get_container_name_for "worker")
+
+    # ensure no container is running under the same name
+    docker ps -a | grep "${container_name}" |
+        awk '{print $1}' | tail -n1 | xargs -I{} docker rm -f {}
+
+    local network_option
+    network_option="$(get_network_option)"
+
+    local image_name
+    image_name=$(get_image_name_for "worker")
+
+    local command
+    command=$(
+        cat <<-COMMAND
+			docker run \
+			--rm \
+			${network_option} \
+			--name ${container_name} \
+			${image_name} \
+			bin/news-review-realtime-db \
+			-aggregate-id=${publishers_list_id} \
+			-since-date=${date} \
+			-in-parallel=true
+COMMAND
+    )
+
+    echo 'About to run the following command "'${command}'"'
+    /bin/bash -c "${command}"
+}
