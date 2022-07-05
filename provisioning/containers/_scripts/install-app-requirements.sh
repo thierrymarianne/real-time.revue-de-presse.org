@@ -37,7 +37,7 @@ function install_dependencies() {
     cd "${project_dir}" || exit
 
     go get -d -v .
-    go install -v .
+    go install -buildvcs=false -v .
 }
 
 function set_file_permissions() {
