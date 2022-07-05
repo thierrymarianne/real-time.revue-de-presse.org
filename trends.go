@@ -6,15 +6,17 @@ import (
 	"flag"
 	"fmt"
 	_ "github.com/lib/pq"
-	"github.com/remeh/sizedwaitgroup"
 	_ "github.com/remeh/sizedwaitgroup"
 	_ "github.com/ti/nasync"
+	"github.com/remeh/sizedwaitgroup"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"gopkg.in/zabawaba99/firego.v1"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"io/ioutil"
 	"log"
 	_ "math"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -47,6 +49,11 @@ type Configuration struct {
 	Write_password           string
 	Write_database           string
 	Write_protocol_host_port string
+	Env                      string
+	Service                  string
+	ServiceVersion           string
+	AgentHost                string
+	AgentPort                string
 }
 
 type Status struct {
@@ -98,15 +105,15 @@ func init() {
 
 func init() {
 	const (
-		usage              = "The id of an publishers list, which tweets are to be printed out"
-		defaultLimit       = 10
-		limitUsage         = "Maximum tweets be collected"
-		defaultPage        = 0
-		pageUsage          = "Page from where tweets are collected from"
-		defaultQuiet       = true
-		quietUsage         = "Quiet mode"
-		defaultParallel    = true
-		parallelUsage      = "Run in parallel"
+		usage           = "The id of an publishers list, which tweets are to be printed out"
+		defaultLimit    = 10
+		limitUsage      = "Maximum tweets be collected"
+		defaultPage     = 0
+		pageUsage       = "Page from where tweets are collected from"
+		defaultQuiet    = true
+		quietUsage      = "Quiet mode"
+		defaultParallel = true
+		parallelUsage   = "Run in parallel"
 	)
 
 	flag.StringVar(&publishersListId, "publishers-list-id", "89f6db28-4d4e-49dc-a2c6-b6bb0e7b12af", usage)
@@ -122,6 +129,20 @@ func main() {
 	err, configuration := parseConfiguration()
 	handleError(err)
 
+	addr := net.JoinHostPort(
+		configuration.AgentHost,
+		configuration.AgentPort,
+	)
+
+	if configuration.Env == "prod" {
+		tracer.Start(
+			tracer.WithAgentAddr(addr),
+			tracer.WithEnv(configuration.Env),
+			tracer.WithService(configuration.Service),
+			tracer.WithServiceVersion(configuration.ServiceVersion),
+		)
+	}
+
 	db := connectToDatabase(configuration)
 
 	// "defer" keyword is described at https://tour.golang.org/flowcontrol/12
@@ -131,6 +152,10 @@ func main() {
 
 	queryTweets(db, firebase, publishersListId, true, aggregateTweetPage, aggregateTweetLimit, `DESC`)
 	queryTweets(db, firebase, publishersListId, false, aggregateTweetPage, aggregateTweetLimit, `DESC`)
+
+	if configuration.Env == "prod" {
+		defer tracer.Stop()
+	}
 }
 
 func removeStatuses(firebase *firego.Firebase) {

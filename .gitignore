@@ -1,5 +1,7 @@
+.env
 *.json
 **database
 config.json
 config.firebase.json
-bin/devobs-*
+docker-compose.override.yaml
+bin/trends*
