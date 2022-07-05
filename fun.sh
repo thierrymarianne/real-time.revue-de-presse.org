@@ -309,17 +309,17 @@ function start() {
     fi
 
     local publishers_list_id
-    publishers_list_id="${1}"
-
-    local date
-    date="${2}"
+    publishers_list_id="${LIST_ID}"
 
     if [ -z "${publishers_list_id}" ];
     then
 
-        publishers_list_id="${LIST_NAME}"
+        publishers_list_id="${LIST_ID}"
 
     fi
+
+    local date
+    date="${DATE}"
 
     if [ -z "${date}" ];
     then
@@ -337,10 +337,7 @@ function start() {
 				--detach \
 				--rm \
 				worker \
-				bash -c "bin/trends \
-				-publishers-list-id="${publishers_list_id}" \
-				-since-date=${date} \
-				-in-parallel=true"
+				bash -c 'bin/trends -publishers-list-id="${publishers_list_id}" -since-date="${date}" -in-parallel=true'
 START
 )"
 
