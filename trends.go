@@ -138,19 +138,23 @@ func main() {
 	if configuration.Env == "prod" {
 		tracer.Start(
 			tracer.WithAgentAddr(addr),
+			tracer.WithDebugMode(true),
+			tracer.WithDebugStack(true),
 			tracer.WithEnv(configuration.Env),
+			tracer.WithLogStartup(true),
+			tracer.WithRuntimeMetrics(true),
 			tracer.WithService(configuration.Service),
 			tracer.WithServiceVersion(configuration.ServiceVersion),
 			tracer.WithTraceEnabled(true),
 		)
 		err := profiler.Start(
-			profiler.WithService(configuration.Service),
 			profiler.WithEnv(configuration.Env),
-			profiler.WithVersion(configuration.ServiceVersion),
 			profiler.WithProfileTypes(
 				profiler.CPUProfile,
 				profiler.HeapProfile,
 			),
+			profiler.WithService(configuration.Service),
+			profiler.WithVersion(configuration.ServiceVersion)
 		)
 		if err != nil {
 			log.Fatal(err)
