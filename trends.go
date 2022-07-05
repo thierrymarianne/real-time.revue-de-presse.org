@@ -141,6 +141,7 @@ func main() {
 			tracer.WithEnv(configuration.Env),
 			tracer.WithService(configuration.Service),
 			tracer.WithServiceVersion(configuration.ServiceVersion),
+			tracer.WithTraceEnabled(true),
 		)
 		err := profiler.Start(
 			profiler.WithService(configuration.Service),
