@@ -142,7 +142,7 @@ func main() {
 			tracer.WithDebugStack(true),
 			tracer.WithEnv(configuration.Env),
 			tracer.WithLogStartup(true),
-			tracer.WithRuntimeMetrics(true),
+			tracer.WithRuntimeMetrics(),
 			tracer.WithService(configuration.Service),
 			tracer.WithServiceVersion(configuration.ServiceVersion),
 			tracer.WithTraceEnabled(true),
