@@ -8,6 +8,8 @@ services:
     build:
       context:    '../../'
       dockerfile: './provisioning/containers/worker/Dockerfile'
+    env_file:
+      - '../../.env'
     restart:      'always'
     volumes:
       - './_scripts/:/scripts'
@@ -17,6 +19,8 @@ services:
     build:
       context:    '../../'
       dockerfile: './provisioning/containers/worker/Dockerfile'
+    env_file:
+      - '../../.env'
     restart:      'always'
     volumes:
       - './_scripts/:/scripts'

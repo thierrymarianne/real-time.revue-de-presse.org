@@ -1,7 +1,5 @@
 
 x-workers: &workers
-  env_file:
-    - '../../.env'
   volumes:
     - '../../:/var/www/trends.example.org'
 
