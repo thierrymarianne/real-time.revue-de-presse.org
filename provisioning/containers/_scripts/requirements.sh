@@ -104,6 +104,7 @@ function install_tracing() {
 
     cd "${project_dir}" || exit
 
+    go get gopkg.in/DataDog/dd-trace-go.v1/profiler
     go get gopkg.in/DataDog/dd-trace-go.v1/...
 }
 

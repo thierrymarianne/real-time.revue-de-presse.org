@@ -12,6 +12,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"gopkg.in/zabawaba99/firego.v1"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"io/ioutil"
 	"log"
@@ -141,6 +142,18 @@ func main() {
 			tracer.WithService(configuration.Service),
 			tracer.WithServiceVersion(configuration.ServiceVersion),
 		)
+		err := profiler.Start(
+			profiler.WithService(configuration.Service),
+			profiler.WithEnv(configuration.Env),
+			profiler.WithVersion(configuration.ServiceVersion),
+			profiler.WithProfileTypes(
+				profiler.CPUProfile,
+				profiler.HeapProfile,
+			),
+		)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	db := connectToDatabase(configuration)
@@ -155,6 +168,7 @@ func main() {
 
 	if configuration.Env == "prod" {
 		defer tracer.Stop()
+		defer profiler.Stop()
 	}
 }
 
