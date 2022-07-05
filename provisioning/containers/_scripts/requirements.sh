@@ -11,7 +11,7 @@ function add_system_user_group() {
     useradd \
         --gid ${WORKER_GID} \
         --home-dir=/var/www \
-        --create-home \
+        --no-create-home \
         --no-user-group \
         --non-unique \
         --shell /usr/sbin/nologin \
