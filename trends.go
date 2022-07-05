@@ -14,6 +14,7 @@ import (
 	"gopkg.in/zabawaba99/firego.v1"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	"io/ioutil"
 	"log"
 	_ "math"
@@ -130,12 +131,12 @@ func main() {
 	err, configuration := parseConfiguration()
 	handleError(err)
 
-	addr := net.JoinHostPort(
-		configuration.AgentHost,
-		configuration.AgentPort,
-	)
-
 	if configuration.Env == "prod" {
+		addr := net.JoinHostPort(
+			configuration.AgentHost,
+			configuration.AgentPort,
+		)
+
 		tracer.Start(
 			tracer.WithAgentAddr(addr),
 			tracer.WithDebugMode(true),
@@ -147,6 +148,8 @@ func main() {
 			tracer.WithServiceVersion(configuration.ServiceVersion),
 			tracer.WithTraceEnabled(true),
 		)
+		defer tracer.Stop()
+
 		err := profiler.Start(
 			profiler.WithEnv(configuration.Env),
 			profiler.WithProfileTypes(
@@ -156,11 +159,10 @@ func main() {
 			profiler.WithService(configuration.Service),
 			profiler.WithVersion(configuration.ServiceVersion),
 		)
+
 		if err != nil {
 			log.Fatal(err)
 		}
-
-		defer tracer.Stop()
 		defer profiler.Stop()
 	}
 
