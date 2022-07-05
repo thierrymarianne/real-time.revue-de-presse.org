@@ -154,7 +154,7 @@ func main() {
 				profiler.HeapProfile,
 			),
 			profiler.WithService(configuration.Service),
-			profiler.WithVersion(configuration.ServiceVersion)
+			profiler.WithVersion(configuration.ServiceVersion),
 		)
 		if err != nil {
 			log.Fatal(err)
