@@ -159,6 +159,9 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+
+		defer tracer.Stop()
+		defer profiler.Stop()
 	}
 
 	db := connectToDatabase(configuration)
@@ -170,11 +173,6 @@ func main() {
 
 	queryTweets(db, firebase, publishersListId, true, aggregateTweetPage, aggregateTweetLimit, `DESC`)
 	queryTweets(db, firebase, publishersListId, false, aggregateTweetPage, aggregateTweetLimit, `DESC`)
-
-	if configuration.Env == "prod" {
-		defer tracer.Stop()
-		defer profiler.Stop()
-	}
 }
 
 func removeStatuses(firebase *firego.Firebase) {
