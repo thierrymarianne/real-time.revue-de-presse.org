@@ -37,7 +37,7 @@ function install_dependencies() {
     cd "${project_dir}" || exit
 
     go get -d -v .
-    go install -buildvcs=false -v .
+    env CGO_ENABLED=1 go install -buildvcs=false -tags appsec -v .
 }
 
 function set_file_permissions() {

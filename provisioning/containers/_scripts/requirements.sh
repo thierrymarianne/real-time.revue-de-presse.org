@@ -21,7 +21,7 @@ function add_system_user_group() {
 
 function clear_package_management_system_cache() {
     # Remove packages installed with apt except for tini
-    apt-get remove --assume-yes build-essential gcc build-essential wget
+    apt-get remove --assume-yes wget
     apt-get autoremove --assume-yes
     apt-get purge --assume-yes
     apt-get clean
@@ -78,7 +78,9 @@ function install_system_packages() {
     # Install packages with package management system frontend (apt)
     apt-get install --assume-yes \
         apt-utils \
+        build-essential \
         ca-certificates \
+        gcc \
         git \
         libcurl4-gnutls-dev \
         libpq-dev \
