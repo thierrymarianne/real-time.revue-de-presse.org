@@ -3,5 +3,10 @@
   "Read_user": "",
   "Read_password": "",
   "Read_database": "",
-  "Read_protocol_host_port": ""
+  "Read_protocol_host_port": "",
+  "Env": "",
+  "Service": "",
+  "ServiceVersion": "",
+  "AgentHost": "",
+  "AgentPort": ""
 }

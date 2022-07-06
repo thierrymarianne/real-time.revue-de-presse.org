@@ -1,9 +1,7 @@
-#!/usr/bin/env bash
-
-set -Eeuo pipefail
+#!/bin/bash
 
 function get_application_prefix() {
-    echo 'news-review-realtime-db'
+    echo 'devobs-realtime-database'
 }
 
 function get_container_name_for() {
@@ -39,33 +37,29 @@ function get_image_name_for() {
 }
 
 function get_docker_network() {
-    if [ -z "${NEWS_REVIEW_NETWORK}" ]; then
-
-        printf 'A %s is expected as %s("%s" environment variable).%s' 'non-empty string' 'network name' 'NEWS_REVIEW_NETWORK' $'\n' 1>&2
-
-        return 1
-
+    if [ ! -z "${DEVOBS_NETWORK}" ]
+    then
+        echo "${DEVOBS_NETWORK}"
+        return
     fi
 
-    echo "${NEWS_REVIEW_NETWORK}"
+    echo 'devobs-api'
+}
+
+function create_network() {
+    local network
+    network="$(get_docker_network)"
+    /bin/bash -c 'docker network create '"${network}"
 }
 
 function get_network_option() {
-    local network_name
-    network_name=$(get_docker_network)
-
-    if [ $? -gt 0 ]; then
-
-        return 1
-
-    fi
-
-    network='--network "'${network_name}'" '
-    if [ -n "${NO_DOCKER_NETWORK}" ]; then
+    network='--network "'$(get_docker_network)'" '
+    if [ -n "${NO_DOCKER_NETWORK}" ];
+    then
         network=''
     fi
 
-    echo "${network}"
+    echo "${network}";
 }
 
 function download_golang() {
@@ -74,51 +68,35 @@ function download_golang() {
 
     local version='1.13.3.linux-amd64'
 
-    if [ -z "${target_dir}" ]; then
+    if [ -z "${target_dir}" ];
+    then
         echo 'Please pass a target dir as first argument'
         echo 'export TARGET_DIR=/usr/local && make download-golang'
         return 1
     fi
 
-    local file_path
-    file_path="/tmp/go${version}.tar.gz"
-    if [ ! -e "${path}" ]; then
-        # @requires wget
-        wget "https://dl.google.com/go/go${version}.tar.gz" \
-            -O "${file_path}"
+    local path
+    path="/tmp/go${version}.tar.gz"
+    if [ ! -e "${path}" ];
+    then
+      # @requires wget
+      wget "https://dl.google.com/go/go${version}.tar.gz" \
+      -O "${path}"
     fi
 
-    echo "$(\cat "./bin/go${version}.asc") ${file_path}" | sha256sum -c - &&
-        tar -xvzf "${file_path}"
+    echo "$(\cat "./bin/go${version}.asc") ${path}" | sha256sum -c &&
+    tar -xvzf "${path}"
 
-    if [ -d "${target_dir}" ]; then
+    if [ ! -d "${target_dir}" ];
+    then
         mv go "${target_dir}"
     fi
 
-    rm "${file_path}"
+    rm "${path}"
 }
 
-function build() {
-    if [ -z "${uid}" ]; then
-
-        printf 'A %s is expected as %s ("%s" environment variable).%s' 'worker user uid' 'non-empty string' 'uid' $'\n' 1>&2
-
-        exit 1
-
-    fi
-
-    if [ -z "${gid}" ]; then
-
-        printf 'A %s is expected as %s ("%s" environment variable).%s' 'worker user uid' 'non-empty string' 'gid' $'\n' 1>&2
-
-        exit 1
-
-    fi
-
-    docker build \
-        --build-arg="uid=${uid}" \
-        --build-arg="gid=${gid}" \
-        -t "$(get_image_name_for "worker")" .
+function build_worker_container() {
+    docker build -t "$(get_image_name_for "worker")" .
 }
 
 function run_worker_container() {
@@ -128,58 +106,52 @@ function run_worker_container() {
     local publishers_list_id
     publishers_list_id="${1}"
 
-    if [ -z "${publishers_list_id}" ]; then
+    if [ -z "${publishers_list_id}" ];
+    then
         echo 'Please provide a aggregated id as a first argument.'
         echo 'or export an environment variable e.g.'
-        echo 'export PUBLISHERS_LIST_ID="1"'
+        echo 'export PUBLISHERS_LIST_ID="89f6db28-4d4e-49dc-a2c6-b6bb0e7b12af"'
         return 1
     fi
 
-    if [ -z "${date}" ]; then
+    if [ -z "${date}" ];
+    then
         echo 'Please provide a valid date as a second argument'
         echo 'or export an environment variable e.g.'
         echo 'export SINCE_DATE=2019-12-25'
         return 1
     fi
 
+    local suffix
+    suffix="-$(echo "${publishers_list_id}-${date}" | sha1sum | tail -c12 | awk '{print $1}')"
+
     local container_name
-    container_name=$(get_container_name_for "worker")
+    container_name=$(get_container_name_for "worker")"${suffix}"
 
     # ensure no container is running under the same name
-    docker ps -a | grep "${container_name}" |
-        awk '{print $1}' | tail -n1 | xargs -I{} docker rm -f {}
+    docker ps -a | grep "${container_name}" | \
+    awk '{print $1}' | tail -n1 | xargs -I{} docker rm -f {}
 
     local network_option
     network_option="$(get_network_option)"
-
-    if [ $? -gt 0 ]; then
-
-        echo 'Could not figure which network to run container from.' 1>&2
-
-        return 1:
-
-    fi
 
     local image_name
     image_name=$(get_image_name_for "worker")
 
     local command
-    command=$(
-        cat <<-COMMAND
-			docker run \
-			--rm \
-			${network_option} \
-			--name ${container_name} \
-			${image_name} \
-			bin/news-review-realtime-db \
-			-aggregate-id=${publishers_list_id} \
-			-since-date=${date} \
-			-in-parallel=true
+    command=$(cat << COMMAND
+docker run \
+--rm \
+${network_option} \
+--name ${container_name} \
+${image_name} \
+bin/devobs-realtime-database \
+-publishers-list-id="${publishers_list_id}" \
+-since-date=${date} \
+-in-parallel=true
 COMMAND
-    )
+)
 
     echo 'About to run the following command "'${command}'"'
     /bin/bash -c "${command}"
 }
-
-set +Eeuo pipefail
