@@ -22,6 +22,3 @@ install: build ## Install requirements
 
 start: ## Run worker e.g. COMMAND=''
 	@/bin/bash -c 'source fun.sh && start'
-
-migrate-publications: ## Migrate publications
-	@/bin/bash -c "source ./bin/console.sh && run_worker_container ${PUBLISHERS_LIST_ID} ${SINCE_DATE}"
