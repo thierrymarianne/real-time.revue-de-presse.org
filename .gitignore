@@ -1,5 +1,8 @@
-config.json
-config.firebase.json
 bin/*
 cache/*
 logs/*
+.env
+*.json
+**database
+docker-compose.override.yaml
+bin/trends*
