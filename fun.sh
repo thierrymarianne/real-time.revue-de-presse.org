@@ -125,16 +125,16 @@ function guard_against_missing_variables() {
     if [ -z "${WORKER}" ];
     then
 
-        printf 'A %s is expected as %s ("%s" environment variable).%s' 'non-empty string' 'worker name e.g. worker.example.com' 'WORKER' $'\n'
+        printf 'A %s is expected as %s ("%s" environment variable).%s' 'non-empty string' 'worker name e.g. org.example.trends' 'WORKER' $'\n'
 
         exit 1
 
     fi
 
-    if [ "${WORKER}" = 'trends.example.org' ];
+    if [ "${WORKER}" = 'org.example.trends' ];
     then
 
-        printf 'Have you picked a satisfying worker name ("%s" environment variable - "%s" as default value is not accepted).%s' 'WORKER' 'trends.example.org' $'\n'
+        printf 'Have you picked a satisfying worker name ("%s" environment variable - "%s" default value is not accepted).%s' 'WORKER' 'org.example.trends' $'\n'
 
         exit 1
 
