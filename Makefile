@@ -2,7 +2,8 @@ SHELL:=/bin/bash
 
 .PHONY: doc build clean help install restart start stop test
 
-WORKER ?= 'trends.revue-de-presse.org'
+COMPOSE_PROJECT_NAME ?= 'trends_example_org'
+WORKER ?= 'org.example.trends'
 TMP_DIR ?= '/tmp/tmp_${WORKER}'
 
 doc:
