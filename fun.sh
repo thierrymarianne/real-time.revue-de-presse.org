@@ -238,7 +238,7 @@ function clean() {
 
     if [ -n "${temporary_directory}" ];
     then
-        printf 'About to remove "%s".%s' "${temporary_directory}" $'\n'
+        printf 'About to revise file permissions for "%s" before clean up.%s' "${temporary_directory}" $'\n'
 
         set_file_permissions "${temporary_directory}"
 
