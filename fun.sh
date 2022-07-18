@@ -25,7 +25,7 @@ function load_configuration_parameters() {
     guard_against_missing_variables
 }
 
-function _set_file_permissions() {
+function set_file_permissions() {
     local temporary_directory
     temporary_directory="${1}"
 
@@ -240,7 +240,7 @@ function clean() {
     then
         printf 'About to remove "%s".%s' "${temporary_directory}" $'\n'
 
-        _set_file_permissions "${temporary_directory}"
+        set_file_permissions "${temporary_directory}"
 
         return 0
     fi
