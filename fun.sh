@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-function _set_up_configuration_files() {
+function load_configuration_parameters() {
     if [ ! -e ./.env ]; then
         cp --verbose ./.env{.dist,}
     fi
@@ -55,12 +55,13 @@ function _set_file_permissions() {
 }
 
 function build() {
+    local COMPOSE_PROJECT_NAME
     local DEBUG
     local WORKER
     local WORKER_UID
     local WORKER_GID
 
-    _set_up_configuration_files
+    load_configuration_parameters
 
     if [ $? -gt 1 ];
     then
@@ -103,6 +104,24 @@ function build() {
 }
 
 function guard_against_missing_variables() {
+    if [ -z "${COMPOSE_PROJECT_NAME}" ];
+    then
+
+        printf 'A %s is expected as %s ("%s" environment variable).%s' 'non-empty string' 'project name e.g. org_example_trends' 'COMPOSE_PROJECT_NAME' $'\n'
+
+        exit 1
+
+    fi
+
+    if [ "${COMPOSE_PROJECT_NAME}" = 'trends_example_org' ];
+    then
+
+        printf 'Have you picked a satisfying worker name ("%s" environment variable - "%s" default value is not accepted).%s' 'WORKER' 'trends_example_org' $'\n'
+
+        exit 1
+
+    fi
+
     if [ -z "${WORKER}" ];
     then
 
@@ -153,12 +172,13 @@ function remove_running_container_and_image_in_debug_mode() {
 
     fi
 
+    local COMPOSE_PROJECT_NAME
     local DEBUG
     local WORKER_UID
     local WORKER_GID
     local WORKER
 
-    _set_up_configuration_files
+    load_configuration_parameters
 
     if [ $? -gt 1 ];
     then
@@ -230,12 +250,13 @@ function clean() {
 }
 
 function install() {
+    local COMPOSE_PROJECT_NAME
     local DEBUG
     local WORKER_UID
     local WORKER_GID
     local WORKER
 
-    _set_up_configuration_files
+    load_configuration_parameters
 
     if [ $? -gt 1 ];
     then
@@ -292,12 +313,13 @@ function get_worker_shell() {
 }
 
 function start() {
+    local COMPOSE_PROJECT_NAME
     local DEBUG
     local WORKER
     local WORKER_UID
     local WORKER_GID
 
-    _set_up_configuration_files
+    load_configuration_parameters
 
     if [ $? -gt 1 ];
     then
