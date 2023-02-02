@@ -39,10 +39,15 @@ function create_log_files_when_non_existing() {
         return 1
     fi
 
-    mkdir \
-      --verbose \
-      --parents \
-      "/var/www/${WORKER}/var/log"
+    if [ ! -d "/var/www/${WORKER}/var/log" ];
+    then
+
+        mkdir \
+          --verbose \
+          --parents \
+          "/var/www/${WORKER}/var/log"
+
+    fi
 
     if [ ! -e "/var/www/${WORKER}/var/log/${prefix}.log" ];
     then
