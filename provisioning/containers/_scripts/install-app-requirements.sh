@@ -17,7 +17,7 @@ function install_application() {
     fi
 
     rm -f ./bin/trends
-    go build -o ./bin/trends
+    go build -buildvcs=false -o ./bin/trends
     chown -R worker. ./bin/trends
 }
 
