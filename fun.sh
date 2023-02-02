@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-function _set_up_configuration_files() {
+function load_configuration_parameters() {
     if [ ! -e ./.env ]; then
         cp --verbose ./.env{.dist,}
     fi
@@ -25,7 +25,7 @@ function _set_up_configuration_files() {
     guard_against_missing_variables
 }
 
-function _set_file_permissions() {
+function set_file_permissions() {
     local temporary_directory
     temporary_directory="${1}"
 
@@ -55,12 +55,13 @@ function _set_file_permissions() {
 }
 
 function build() {
+    local COMPOSE_PROJECT_NAME
     local DEBUG
     local WORKER
     local WORKER_UID
     local WORKER_GID
 
-    _set_up_configuration_files
+    load_configuration_parameters
 
     if [ $? -gt 1 ];
     then
@@ -103,19 +104,37 @@ function build() {
 }
 
 function guard_against_missing_variables() {
-    if [ -z "${WORKER}" ];
+    if [ -z "${COMPOSE_PROJECT_NAME}" ];
     then
 
-        printf 'A %s is expected as %s ("%s" environment variable).%s' 'non-empty string' 'worker name e.g. worker.example.com' 'WORKER' $'\n'
+        printf 'A %s is expected as %s ("%s" environment variable).%s' 'non-empty string' 'project name e.g. org_example_trends' 'COMPOSE_PROJECT_NAME' $'\n'
 
         exit 1
 
     fi
 
-    if [ "${WORKER}" = 'trends.example.org' ];
+    if [ "${COMPOSE_PROJECT_NAME}" = 'trends_example_org' ];
     then
 
-        printf 'Have you picked a satisfying worker name ("%s" environment variable - "%s" as default value is not accepted).%s' 'WORKER' 'trends.example.org' $'\n'
+        printf 'Have you picked a satisfying worker name ("%s" environment variable - "%s" default value is not accepted).%s' 'WORKER' 'trends_example_org' $'\n'
+
+        exit 1
+
+    fi
+
+    if [ -z "${WORKER}" ];
+    then
+
+        printf 'A %s is expected as %s ("%s" environment variable).%s' 'non-empty string' 'worker name e.g. org.example.trends' 'WORKER' $'\n'
+
+        exit 1
+
+    fi
+
+    if [ "${WORKER}" = 'org.example.trends' ];
+    then
+
+        printf 'Have you picked a satisfying worker name ("%s" environment variable - "%s" default value is not accepted).%s' 'WORKER' 'org.example.trends' $'\n'
 
         exit 1
 
@@ -153,12 +172,13 @@ function remove_running_container_and_image_in_debug_mode() {
 
     fi
 
+    local COMPOSE_PROJECT_NAME
     local DEBUG
     local WORKER_UID
     local WORKER_GID
     local WORKER
 
-    _set_up_configuration_files
+    load_configuration_parameters
 
     if [ $? -gt 1 ];
     then
@@ -218,9 +238,9 @@ function clean() {
 
     if [ -n "${temporary_directory}" ];
     then
-        printf 'About to remove "%s".%s' "${temporary_directory}" $'\n'
+        printf 'About to revise file permissions for "%s" before clean up.%s' "${temporary_directory}" $'\n'
 
-        _set_file_permissions "${temporary_directory}"
+        set_file_permissions "${temporary_directory}"
 
         return 0
     fi
@@ -230,12 +250,13 @@ function clean() {
 }
 
 function install() {
+    local COMPOSE_PROJECT_NAME
     local DEBUG
     local WORKER_UID
     local WORKER_GID
     local WORKER
 
-    _set_up_configuration_files
+    load_configuration_parameters
 
     if [ $? -gt 1 ];
     then
@@ -292,12 +313,13 @@ function get_worker_shell() {
 }
 
 function start() {
+    local COMPOSE_PROJECT_NAME
     local DEBUG
     local WORKER
     local WORKER_UID
     local WORKER_GID
 
-    _set_up_configuration_files
+    load_configuration_parameters
 
     if [ $? -gt 1 ];
     then
