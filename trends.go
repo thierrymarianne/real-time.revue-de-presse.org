@@ -291,7 +291,7 @@ func queryTweets(
 	}
 
 	selectClause := `
-	SELECT
+		SELECT
 		CONCAT('https://twitter.com/', ust_full_name, '/status/', ust_status_id) as url,
 		s.ust_full_name as username,
 		s.ust_text as tweet,
@@ -306,6 +306,7 @@ func queryTweets(
     `
 
     groupByClause := `
+		GROUP BY 
 		h.status_id,
 		CONCAT('https://twitter.com/', ust_full_name, '/status/', ust_status_id),
 		s.ust_full_name,
@@ -318,21 +319,24 @@ func queryTweets(
     `
 	if distinctSources {
 		selectClause = `
-		SELECT
-            (ARRAY_AGG(CONCAT('https://twitter.com/', ust_full_name, '/status/', ust_status_id) ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as url,
-            (ARRAY_AGG(s.ust_full_name ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as username,
-            (ARRAY_AGG(s.ust_text ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as tweet,
-            (ARRAY_AGG(s.ust_created_at ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as publicationDate,
-            (ARRAY_AGG(s.ust_api_document ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as Json,
-                MAX(COALESCE(p.total_retweets, h.total_retweets)) retweets,
-                MAX(COALESCE(p.total_favorites, h.total_retweets)) favorites,
-            (ARRAY_AGG(s.ust_id ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as id,
-            (ARRAY_AGG(s.ust_status_id ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as statusId,
-            (ARRAY_AGG(h.is_retweet ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as is_retweet,
-            (ARRAY_AGG(s.ust_created_at ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as checkedAt
+			SELECT
+			(ARRAY_AGG(CONCAT('https://twitter.com/', ust_full_name, '/status/', ust_status_id) ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as url,
+			(ARRAY_AGG(s.ust_full_name ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as username,
+			(ARRAY_AGG(s.ust_text ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as tweet,
+			(ARRAY_AGG(s.ust_created_at ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as publicationDate,
+			(ARRAY_AGG(s.ust_api_document ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as Json,
+				MAX(COALESCE(p.total_retweets, h.total_retweets)) retweets,
+				MAX(COALESCE(p.total_favorites, h.total_retweets)) favorites,
+			(ARRAY_AGG(s.ust_id ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as id,
+			(ARRAY_AGG(s.ust_status_id ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as statusId,
+			(ARRAY_AGG(h.is_retweet ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as is_retweet,
+			(ARRAY_AGG(s.ust_created_at ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as checkedAt
 		`
 
-		groupByClause = "GROUP BY s.ust_full_name"
+		groupByClause = `
+			GROUP BY 
+			s.ust_full_name
+		`
 	}
 
 	var query string
