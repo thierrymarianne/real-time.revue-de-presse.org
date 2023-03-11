@@ -291,6 +291,7 @@ func queryTweets(
 	}
 
 	selectClause := `
+	SELECT
 		CONCAT('https://twitter.com/', ust_full_name, '/status/', ust_status_id) as url,
 		s.ust_full_name as username,
 		s.ust_text as tweet,
@@ -317,6 +318,7 @@ func queryTweets(
     `
 	if distinctSources {
 		selectClause = `
+		SELECT
             (ARRAY_AGG(CONCAT('https://twitter.com/', ust_full_name, '/status/', ust_status_id) ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as url,
             (ARRAY_AGG(s.ust_full_name ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as username,
             (ARRAY_AGG(s.ust_text ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as tweet,

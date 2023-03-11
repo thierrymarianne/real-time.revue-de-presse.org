@@ -1,4 +1,4 @@
-FROM        golang:1.18-bullseye
+FROM        golang:1.20-bullseye
 
 ARG         WORKER="trends.example.org"
 ARG         WORKER_UID=1000
