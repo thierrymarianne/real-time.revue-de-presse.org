@@ -35,6 +35,7 @@ var quiet bool
 var publishersListId string
 var aggregateTweetPage int
 var aggregateTweetLimit int
+var migrateDistinctSourcesOnly bool
 
 const (
 	deprecatedPublisherId = "35ca09fb-818c-4456-9d64-7f1401331303"
@@ -84,17 +85,17 @@ type Tweet struct {
 // See when init function is run at https://stackoverflow.com/q/24790175/282073
 func init() {
 	const (
-		defaultUsername    = "fabpot"
-		usage              = "The username, whose tweets are about to be collected and counted"
-		localDbUsage       = "The database from which tweets should be read"
-		sinceTodayUsage    = "Store tweets collected over the current day"
-		sinceLastWeekUsage = "Store tweets collected over the last week"
+		defaultUsername           = "canardenchaine"
+		usage                     = "The username, whose tweets are about to be collected and counted"
+		localDbDescription        = "The database from which tweets should be read"
+		sinceTodayDescription     = "Store tweets collected over the current day"
+		sinceLastWeekDescription  = "Store tweets collected over the last week"
 	)
 
 	flag.StringVar(&username, "username", defaultUsername, usage)
-	flag.BoolVar(&readFromLocalDb, "read-from-local-db", false, localDbUsage)
-	flag.BoolVar(&sinceAWeekAgo, "since-last-week", false, sinceLastWeekUsage)
-	flag.StringVar(&sinceDate, "since-date", formatTodayDate(), sinceTodayUsage)
+	flag.BoolVar(&readFromLocalDb, "read-from-local-db", false, localDbDescription)
+	flag.BoolVar(&sinceAWeekAgo, "since-last-week", false, sinceLastWeekDescription)
+	flag.StringVar(&sinceDate, "since-date", formatTodayDate(), sinceTodayDescription)
 }
 
 func init() {
@@ -108,22 +109,25 @@ func init() {
 
 func init() {
 	const (
-		usage           = "The id of an publishers list, which tweets are to be printed out"
-		defaultLimit    = 10
-		limitUsage      = "Maximum tweets be collected"
-		defaultPage     = 0
-		pageUsage       = "Page from where tweets are collected from"
-		defaultQuiet    = true
-		quietUsage      = "Quiet mode"
-		defaultParallel = true
-		parallelUsage   = "Run in parallel"
+		usage           						    = "The id of an publishers list, which tweets are to be printed out"
+		defaultLimit    						    = 10
+		limitDescription      						= "Maximum tweets be collected"
+		defaultPage     						    = 0
+		pageDescription       						= "Page from where tweets are collected from"
+		defaultQuiet    						    = true
+		quietDescription      						= "Quiet mode"
+		defaultParallel 						    = true
+		parallelDescription   						= "Run in parallel"
+		defaultDistinctSourcesOnlyMigrationFlag     = false
+		distinctSourcesOnlyMigrationFlagDescription = "Migrate publications from distinct sources only"
 	)
 
 	flag.StringVar(&publishersListId, "publishers-list-id", "89f6db28-4d4e-49dc-a2c6-b6bb0e7b12af", usage)
-	flag.IntVar(&aggregateTweetLimit, "limit", defaultLimit, limitUsage)
-	flag.IntVar(&aggregateTweetPage, "page", defaultPage, pageUsage)
-	flag.BoolVar(&quiet, "quiet", defaultQuiet, quietUsage)
-	flag.BoolVar(&parallel, "in-parallel", defaultParallel, parallelUsage)
+	flag.IntVar(&aggregateTweetLimit, "limit", defaultLimit, limitDescription)
+	flag.IntVar(&aggregateTweetPage, "page", defaultPage, pageDescription)
+	flag.BoolVar(&quiet, "quiet", defaultQuiet, quietDescription)
+	flag.BoolVar(&parallel, "in-parallel", defaultParallel, parallelDescription)
+	flag.BoolVar(&migrateDistinctSourcesOnly, "migrate-distinct-sources-only", defaultDistinctSourcesOnlyMigrationFlag, distinctSourcesOnlyMigrationFlagDescription)
 }
 
 func main() {
@@ -174,45 +178,54 @@ func main() {
 
 	firebase := connectToFirebase(configuration)
 
-    // Won't store publications from distinct sources
-    distinctSources := false
-    // Won't include retweets
-    includeRetweets := false
+	// Won't store publications from distinct sources
+	distinctSources := false
+	// Won't include retweets
+	includeRetweets := false
 
-	queryTweets(db,
-		firebase,
-		publishersListId,
-		distinctSources,
-		includeRetweets,
-		aggregateTweetPage,
-		aggregateTweetLimit,
-		`DESC`,
-	)
+	if !migrateDistinctSourcesOnly {
+
+		queryTweets(db,
+			firebase,
+			publishersListId,
+			includeRetweets,
+			distinctSources,
+			aggregateTweetPage,
+			aggregateTweetLimit,
+			`DESC`,
+		)
+
+	}
 
     // Will store publications from distinct sources
     distinctSources = true
 
     // Scoping with conditional branch to prevent possible refactoring mistakes in the future
     if distinctSources {
-        // Will include retweets
-        includeRetweets := true
-        queryTweets(db,
-			firebase,
-			publishersListId,
-			distinctSources,
-			includeRetweets,
-			aggregateTweetPage,
-			aggregateTweetLimit,
-			`DESC`,
-		)
 
-        // Won't include retweets
-        includeRetweets = false
-        queryTweets(db,
+		if !migrateDistinctSourcesOnly {
+
+			// Will include retweets
+			includeRetweets := true
+			queryTweets(db,
+				firebase,
+				publishersListId,
+				includeRetweets,
+				distinctSources,
+				aggregateTweetPage,
+				aggregateTweetLimit,
+				`DESC`,
+			)
+
+		}
+
+		// Won't include retweets
+		includeRetweets = false
+		queryTweets(db,
 			firebase,
 			publishersListId,
-			distinctSources,
 			includeRetweets,
+			distinctSources,
 			aggregateTweetPage,
 			aggregateTweetLimit,
 			`DESC`,
