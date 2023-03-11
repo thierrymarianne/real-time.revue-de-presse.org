@@ -37,11 +37,12 @@ var aggregateTweetPage int
 var aggregateTweetLimit int
 
 const (
-	maxExecutionTimeInMinutes = 3 * 60
-	tweetPerPage              = 100000
+	deprecatedPublisherId = "35ca09fb-818c-4456-9d64-7f1401331303"
+	tweetPerPage 		  = 100000
 )
 
 type Configuration struct {
+	List_Id                  string
 	Firebase_url             string
 	Read_user                string
 	Read_password            string
@@ -325,8 +326,8 @@ func queryTweets(
 			(ARRAY_AGG(s.ust_text ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as tweet,
 			(ARRAY_AGG(s.ust_created_at ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as publicationDate,
 			(ARRAY_AGG(s.ust_api_document ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as Json,
-				MAX(COALESCE(p.total_retweets, h.total_retweets)) retweets,
-				MAX(COALESCE(p.total_favorites, h.total_retweets)) favorites,
+			MAX(COALESCE(p.total_retweets, h.total_retweets)) retweets,
+			MAX(COALESCE(p.total_favorites, h.total_retweets)) favorites,
 			(ARRAY_AGG(s.ust_id ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as id,
 			(ARRAY_AGG(s.ust_status_id ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as statusId,
 			(ARRAY_AGG(h.is_retweet ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as is_retweet,
@@ -348,7 +349,10 @@ func queryTweets(
 		` + constraintOnRetweetStatus + `
 		INNER JOIN publishers_list
 		ON h.aggregate_id = publishers_list.id
-		AND publishers_list.public_id = $2
+		AND (
+			publishers_list.public_id = $2
+			OR publishers_list.public_id = $3
+		)
 		LEFT JOIN status_popularity p
 		ON p.status_id = h.status_id
 		AND (p.checked_at::timestamp - '1 HOUR'::interval)::date = (h.publication_date_time::timestamp - '1 HOUR'::interval)::date 
@@ -365,7 +369,7 @@ func queryTweets(
 		ORDER BY retweets ` + sortingOrder
 
 	if limit > 0 {
-		query = query + ` OFFSET $3 LIMIT $4`
+		query = query + ` OFFSET $4 LIMIT $5`
 	}
 
 	selectTweets, err := db.Prepare(query)
@@ -380,13 +384,13 @@ func selectTweetsWindow(limit int, page int, selectTweets *sql.Stmt, publishersL
 	if limit > 0 {
 		offset := page * tweetPerPage
 		itemsPerPage := limit
-		rows, err := selectTweets.Query(sinceDate, publishersListId, offset, itemsPerPage)
+		rows, err := selectTweets.Query(sinceDate, publishersListId, deprecatedPublisherId, offset, itemsPerPage)
 		handleError(err)
 
 		return rows
 	}
 
-	rows, err := selectTweets.Query(sinceDate, publishersListId)
+	rows, err := selectTweets.Query(sinceDate, publishersListId, deprecatedPublisherId)
 	handleError(err)
 
 	return rows
@@ -400,19 +404,23 @@ func countHighlights(db *sql.DB, limit int) int {
 		SELECT COUNT(*) highlights
 		FROM highlight h
 		INNER JOIN weaving_status s
-		ON 
-		s.ust_id = h.status_id
+		ON  s.ust_id = h.status_id
 		` + sinceWhen() + `
 		INNER JOIN publishers_list
 		ON h.aggregate_id = publishers_list.id
-		AND publishers_list.public_id = $2
+		AND ( 
+			publishers_list.public_id = $2 OR 
+			publishers_list.public_id = $3
+		)
 		LEFT JOIN status_popularity p
-		ON p.status_id = h.status_id`
+		ON p.status_id = h.status_id
+		AND (p.checked_at::timestamp - '1 HOUR'::interval)::date = (h.publication_date_time::timestamp - '1 HOUR'::interval)::date
+    `
 
 	statement, err := db.Prepare(query)
 	handleError(err)
 
-	highlightsCount, err := statement.Query(sinceDate, publishersListId)
+	highlightsCount, err := statement.Query(sinceDate, publishersListId, deprecatedPublisherId)
 	handleError(err)
 
 	columns, err := highlightsCount.Columns()
@@ -430,7 +438,7 @@ func countHighlights(db *sql.DB, limit int) int {
 		handleError(err)
 	}
 
-	fmt.Printf("Found %d matching higlights on %s\n", totalHighlights, sinceDate)
+	fmt.Printf("Found %d matching highlights on %s\n", totalHighlights, sinceDate)
 
 	if limit > -1 && limit < totalHighlights {
 		return limit
