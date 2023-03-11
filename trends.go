@@ -347,6 +347,7 @@ func queryTweets(
 		AND publishers_list.public_id = $2
 		LEFT JOIN status_popularity p
 		ON p.status_id = h.status_id
+		AND (p.checked_at::timestamp - '1 HOUR'::interval)::date = (h.publication_date_time::timestamp - '1 HOUR'::interval)::date 
 		-- Prevent publications by deleted members from being fetched
 		WHERE
 		h.member_id NOT IN (
