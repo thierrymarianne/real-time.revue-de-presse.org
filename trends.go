@@ -37,11 +37,12 @@ var aggregateTweetPage int
 var aggregateTweetLimit int
 
 const (
-	maxExecutionTimeInMinutes = 3 * 60
-	tweetPerPage              = 100000
+	deprecatedPublisherId = "35ca09fb-818c-4456-9d64-7f1401331303"
+	tweetPerPage 		  = 100000
 )
 
 type Configuration struct {
+	List_Id                  string
 	Firebase_url             string
 	Read_user                string
 	Read_password            string
@@ -173,8 +174,50 @@ func main() {
 
 	firebase := connectToFirebase(configuration)
 
-	queryTweets(db, firebase, publishersListId, true, aggregateTweetPage, aggregateTweetLimit, `DESC`)
-	queryTweets(db, firebase, publishersListId, false, aggregateTweetPage, aggregateTweetLimit, `DESC`)
+    // Won't store publications from distinct sources
+    distinctSources := false
+    // Won't include retweets
+    includeRetweets := false
+
+	queryTweets(db,
+		firebase,
+		publishersListId,
+		distinctSources,
+		includeRetweets,
+		aggregateTweetPage,
+		aggregateTweetLimit,
+		`DESC`,
+	)
+
+    // Will store publications from distinct sources
+    distinctSources = true
+
+    // Scoping with conditional branch to prevent possible refactoring mistakes in the future
+    if distinctSources {
+        // Will include retweets
+        includeRetweets := true
+        queryTweets(db,
+			firebase,
+			publishersListId,
+			distinctSources,
+			includeRetweets,
+			aggregateTweetPage,
+			aggregateTweetLimit,
+			`DESC`,
+		)
+
+        // Won't include retweets
+        includeRetweets = false
+        queryTweets(db,
+			firebase,
+			publishersListId,
+			distinctSources,
+			includeRetweets,
+			aggregateTweetPage,
+			aggregateTweetLimit,
+			`DESC`,
+		)
+	}
 }
 
 func removeStatuses(firebase *firego.Firebase) {
@@ -237,6 +280,7 @@ func queryTweets(
 	firebase *firego.Firebase,
 	publishersListId string,
 	includeRetweets bool,
+	distinctSources bool,
 	page int,
 	limit int,
 	sortingOrder string) {
@@ -247,8 +291,7 @@ func queryTweets(
 		constraintOnRetweetStatus = "AND h.is_retweet = false"
 	}
 
-	var query string
-	query = `
+	selectClause := `
 		SELECT
 		CONCAT('https://twitter.com/', ust_full_name, '/status/', ust_status_id) as url,
 		s.ust_full_name as username,
@@ -261,26 +304,9 @@ func queryTweets(
 		s.ust_status_id as statusId,
 		h.is_retweet,
 		s.ust_created_at as checkedAt
-		FROM highlight h
-		INNER JOIN weaving_status s
-		ON s.ust_id = h.status_id
-		` + sinceWhen() + `
-		` + constraintOnRetweetStatus + `
-		INNER JOIN publishers_list
-		ON h.aggregate_id = publishers_list.id
-		AND publishers_list.public_id = $2
-		LEFT JOIN status_popularity p
-		ON p.status_id = h.status_id
-		-- Prevent publications by deleted members from being fetched
-		WHERE
-		h.member_id NOT IN (
-			SELECT usr_id
-			FROM weaving_user member,
-			publishers_list publication_list
-			WHERE publication_list.deleted_at IS NOT NULL
-			AND member.usr_twitter_username = publication_list.screen_name
-			AND publication_list.screen_name IS NOT NULL
-		) 
+    `
+
+    groupByClause := `
 		GROUP BY 
 		h.status_id,
 		CONCAT('https://twitter.com/', ust_full_name, '/status/', ust_status_id),
@@ -291,10 +317,59 @@ func queryTweets(
 		s.ust_id,
 		h.is_retweet,
 		s.ust_created_at
+    `
+	if distinctSources {
+		selectClause = `
+			SELECT
+			(ARRAY_AGG(CONCAT('https://twitter.com/', ust_full_name, '/status/', ust_status_id) ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as url,
+			(ARRAY_AGG(s.ust_full_name ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as username,
+			(ARRAY_AGG(s.ust_text ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as tweet,
+			(ARRAY_AGG(s.ust_created_at ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as publicationDate,
+			(ARRAY_AGG(s.ust_api_document ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as Json,
+			MAX(COALESCE(p.total_retweets, h.total_retweets)) retweets,
+			MAX(COALESCE(p.total_favorites, h.total_retweets)) favorites,
+			(ARRAY_AGG(s.ust_id ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as id,
+			(ARRAY_AGG(s.ust_status_id ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as statusId,
+			(ARRAY_AGG(h.is_retweet ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as is_retweet,
+			(ARRAY_AGG(s.ust_created_at ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as checkedAt
+		`
+
+		groupByClause = `
+			GROUP BY 
+			s.ust_full_name
+		`
+	}
+
+	var query string
+	query = selectClause + `
+		FROM highlight h
+		INNER JOIN weaving_status s
+		ON s.ust_id = h.status_id
+		` + sinceWhen() + `
+		` + constraintOnRetweetStatus + `
+		INNER JOIN publishers_list
+		ON h.aggregate_id = publishers_list.id
+		AND (
+			publishers_list.public_id = $2
+			OR publishers_list.public_id = $3
+		)
+		LEFT JOIN status_popularity p
+		ON p.status_id = h.status_id
+		AND (p.checked_at::timestamp - '1 HOUR'::interval)::date = (h.publication_date_time::timestamp - '1 HOUR'::interval)::date 
+		-- Prevent publications by deleted members from being fetched
+		WHERE
+		h.member_id NOT IN (
+			SELECT usr_id
+			FROM weaving_user member,
+			publishers_list publication_list
+			WHERE publication_list.deleted_at IS NOT NULL
+			AND member.usr_twitter_username = publication_list.screen_name
+			AND publication_list.screen_name IS NOT NULL
+		) ` + groupByClause + `
 		ORDER BY retweets ` + sortingOrder
 
 	if limit > 0 {
-		query = query + ` OFFSET $3 LIMIT $4`
+		query = query + ` OFFSET $4 LIMIT $5`
 	}
 
 	selectTweets, err := db.Prepare(query)
@@ -302,20 +377,20 @@ func queryTweets(
 
 	rows := selectTweetsWindow(limit, page, selectTweets, publishersListId, err)
 
-	migrateStatusesToFirebaseApp(rows, firebase, publishersListId, includeRetweets, totalHighlights)
+	migrateStatusesToFirebaseApp(rows, firebase, publishersListId, distinctSources, includeRetweets, totalHighlights)
 }
 
 func selectTweetsWindow(limit int, page int, selectTweets *sql.Stmt, publishersListId string, err error) *sql.Rows {
 	if limit > 0 {
 		offset := page * tweetPerPage
 		itemsPerPage := limit
-		rows, err := selectTweets.Query(sinceDate, publishersListId, offset, itemsPerPage)
+		rows, err := selectTweets.Query(sinceDate, publishersListId, deprecatedPublisherId, offset, itemsPerPage)
 		handleError(err)
 
 		return rows
 	}
 
-	rows, err := selectTweets.Query(sinceDate, publishersListId)
+	rows, err := selectTweets.Query(sinceDate, publishersListId, deprecatedPublisherId)
 	handleError(err)
 
 	return rows
@@ -329,19 +404,23 @@ func countHighlights(db *sql.DB, limit int) int {
 		SELECT COUNT(*) highlights
 		FROM highlight h
 		INNER JOIN weaving_status s
-		ON 
-		s.ust_id = h.status_id
+		ON  s.ust_id = h.status_id
 		` + sinceWhen() + `
 		INNER JOIN publishers_list
 		ON h.aggregate_id = publishers_list.id
-		AND publishers_list.public_id = $2
+		AND ( 
+			publishers_list.public_id = $2 OR 
+			publishers_list.public_id = $3
+		)
 		LEFT JOIN status_popularity p
-		ON p.status_id = h.status_id`
+		ON p.status_id = h.status_id
+		AND (p.checked_at::timestamp - '1 HOUR'::interval)::date = (h.publication_date_time::timestamp - '1 HOUR'::interval)::date
+    `
 
 	statement, err := db.Prepare(query)
 	handleError(err)
 
-	highlightsCount, err := statement.Query(sinceDate, publishersListId)
+	highlightsCount, err := statement.Query(sinceDate, publishersListId, deprecatedPublisherId)
 	handleError(err)
 
 	columns, err := highlightsCount.Columns()
@@ -359,7 +438,7 @@ func countHighlights(db *sql.DB, limit int) int {
 		handleError(err)
 	}
 
-	fmt.Printf("Found %d matching higlights on %s\n", totalHighlights, sinceDate)
+	fmt.Printf("Found %d matching highlights on %s\n", totalHighlights, sinceDate)
 
 	if limit > -1 && limit < totalHighlights {
 		return limit
@@ -380,6 +459,7 @@ func migrateStatusesToFirebaseApp(
 	rows *sql.Rows,
 	firebase *firego.Firebase,
 	publishersListId string,
+	distinctSources bool,
 	includeRetweets bool,
 	totalHighlights int) {
 	columns, err := rows.Columns()
@@ -474,8 +554,13 @@ func migrateStatusesToFirebaseApp(
 
 	var statusType string
 	statusType = "status"
+
 	if includeRetweets {
 		statusType = "retweet"
+	}
+
+	if distinctSources {
+		statusType = "statusFromDistinctSources"
 	}
 
 	path := "highlights/" + publishersListId + "/" + sinceDate + "/" + statusType + "/"
@@ -494,7 +579,7 @@ func migrateStatusesToFirebaseApp(
 
 			go (func(tweet Tweet, index int) {
 				defer swg.Done()
-				addToFirebaseApp(tweet, index, firebase, publishersListId)
+				addToFirebaseApp(tweet, index, distinctSources, firebase, publishersListId)
 			})(tweet, index)
 		}
 
@@ -504,11 +589,11 @@ func migrateStatusesToFirebaseApp(
 	}
 
 	for index, tweet := range tweets {
-		addToFirebaseApp(tweet, index, firebase, publishersListId)
+		addToFirebaseApp(tweet, index, distinctSources, firebase, publishersListId)
 	}
 }
 
-func addToFirebaseApp(tweet Tweet, index int, firebase *firego.Firebase, publishersListId string) {
+func addToFirebaseApp(tweet Tweet, index int, distinctSources bool, firebase *firego.Firebase, publishersListId string) {
 	var decodedApiDocument Status
 	apiDocument := []byte(tweet.json)
 
@@ -525,8 +610,13 @@ func addToFirebaseApp(tweet Tweet, index int, firebase *firego.Firebase, publish
 
 	var statusType string
 	statusType = "status"
+
 	if tweet.canBeRetweet {
 		statusType = "retweet"
+	}
+
+	if distinctSources {
+		statusType = "statusFromDistinctSources"
 	}
 
 	statusRef, err := firebase.Ref("highlights/" + publishersListId + "/" + sinceDate + "/" +

@@ -356,17 +356,15 @@ function start() {
 				--file=./provisioning/containers/docker-compose.yaml \
 				--file=./provisioning/containers/docker-compose.override.yaml \
 				run \
-				--detach \
 				--rm \
 				worker \
 				bash -c 'bin/trends -publishers-list-id="${publishers_list_id}" -since-date="${date}" -in-parallel=true'
 START
 )"
 
-    echo -n "${cmd}"
+    echo -n "${cmd}" >> "./var/log/${WORKER}.log"
 
-    container_id="$(/bin/bash -c "${cmd}")"
-    docker logs -f "${container_id}" >> "./var/log/${WORKER}.log" 2>> "./var/log/${WORKER}.error.log"
+    /bin/bash -c "${cmd}" >> "./var/log/${WORKER}.log" 2>> "./var/log/${WORKER}.error.log"
 }
 
 function stop() {
