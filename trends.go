@@ -546,12 +546,13 @@ func migrateStatusesToFirebaseApp(
 
 	var statusType string
 	statusType = "status"
+
 	if includeRetweets {
 		statusType = "retweet"
 	}
 
 	if distinctSources {
-		statusType = "distinct/" + statusType
+		statusType = "statusFromDistinctSources"
 	}
 
 	path := "highlights/" + publishersListId + "/" + sinceDate + "/" + statusType + "/"
@@ -570,7 +571,7 @@ func migrateStatusesToFirebaseApp(
 
 			go (func(tweet Tweet, index int) {
 				defer swg.Done()
-				addToFirebaseApp(tweet, index, firebase, publishersListId)
+				addToFirebaseApp(tweet, index, distinctSources, firebase, publishersListId)
 			})(tweet, index)
 		}
 
@@ -580,11 +581,11 @@ func migrateStatusesToFirebaseApp(
 	}
 
 	for index, tweet := range tweets {
-		addToFirebaseApp(tweet, index, firebase, publishersListId)
+		addToFirebaseApp(tweet, index, distinctSources, firebase, publishersListId)
 	}
 }
 
-func addToFirebaseApp(tweet Tweet, index int, firebase *firego.Firebase, publishersListId string) {
+func addToFirebaseApp(tweet Tweet, index int, distinctSources bool, firebase *firego.Firebase, publishersListId string) {
 	var decodedApiDocument Status
 	apiDocument := []byte(tweet.json)
 
@@ -601,8 +602,13 @@ func addToFirebaseApp(tweet Tweet, index int, firebase *firego.Firebase, publish
 
 	var statusType string
 	statusType = "status"
+
 	if tweet.canBeRetweet {
 		statusType = "retweet"
+	}
+
+	if distinctSources {
+		statusType = "statusFromDistinctSources"
 	}
 
 	statusRef, err := firebase.Ref("highlights/" + publishersListId + "/" + sinceDate + "/" +
