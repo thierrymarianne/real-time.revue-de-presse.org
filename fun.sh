@@ -350,6 +350,16 @@ function start() {
 
     fi
 
+    local from_distinct_sources
+    from_distinct_sources='false'
+
+    if [ -n "${FROM_DISTINCT_SOURCES_ONLY}" ];
+    then
+
+        from_distinct_sources='true'
+
+    fi
+
     cmd="$(
         cat <<-START
 				docker compose \
@@ -358,11 +368,11 @@ function start() {
 				run \
 				--rm \
 				worker \
-				bash -c 'bin/trends -publishers-list-id="${publishers_list_id}" -since-date="${date}" -in-parallel=true'
+				bash -c 'bin/trends -publishers-list-id="${publishers_list_id}" -migrate-distinct-sources-only=${from_distinct_sources} -since-date="${date}" -in-parallel=true'
 START
 )"
 
-    echo -n "${cmd}" >> "./var/log/${WORKER}.log"
+    printf '%s%s' "${cmd}" $'\n' >> "./var/log/${WORKER}.log"
 
     /bin/bash -c "${cmd}" >> "./var/log/${WORKER}.log" 2>> "./var/log/${WORKER}.error.log"
 }
