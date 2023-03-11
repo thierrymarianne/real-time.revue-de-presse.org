@@ -297,7 +297,7 @@ func queryTweets(
 	page int,
 	limit int,
 	sortingOrder string) {
-	totalHighlights := countHighlights(db, limit)
+	totalHighlights := countHighlights(db, distinctSources, limit)
 
 	constraintOnRetweetStatus := ""
 	if !includeRetweets {
@@ -319,6 +319,34 @@ func queryTweets(
 		s.ust_created_at as checkedAt
     `
 
+	fromClause := `
+		FROM highlight h
+		INNER JOIN weaving_status s
+		ON s.ust_id = h.status_id
+		` + sinceWhen() + `
+		` + constraintOnRetweetStatus + `
+		INNER JOIN publishers_list
+		ON h.aggregate_id = publishers_list.id
+		AND (
+			publishers_list.public_id = $1
+			OR publishers_list.public_id = $2
+		)
+	`
+
+	whereClause := `
+	-- Prevent publications by deleted members from being fetched
+	WHERE
+	(h.publication_date_time::timestamp - '1 HOUR'::interval)::date = $3
+	AND h.member_id NOT IN (
+		SELECT usr_id
+		FROM weaving_user member,
+		publishers_list publication_list
+		WHERE publication_list.deleted_at IS NOT NULL
+		AND member.usr_twitter_username = publication_list.screen_name
+		AND publication_list.screen_name IS NOT NULL
+	) 
+	`
+
     groupByClause := `
 		GROUP BY 
 		h.status_id,
@@ -339,12 +367,39 @@ func queryTweets(
 			(ARRAY_AGG(s.ust_text ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as tweet,
 			(ARRAY_AGG(s.ust_created_at ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as publicationDate,
 			(ARRAY_AGG(s.ust_api_document ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as Json,
-			MAX(COALESCE(p.total_retweets, h.total_retweets)) retweets,
-			MAX(COALESCE(p.total_favorites, h.total_retweets)) favorites,
+			MAX(COALESCE(p.total_retweets, h.total_retweets, (ust_api_document::json->>'retweet_count')::integer)) retweets,
+			MAX(COALESCE(p.total_favorites, h.total_retweets, (ust_api_document::json->>'favorite_count')::integer)) favorites,
 			(ARRAY_AGG(s.ust_id ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as id,
 			(ARRAY_AGG(s.ust_status_id ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as statusId,
 			(ARRAY_AGG(h.is_retweet ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as is_retweet,
 			(ARRAY_AGG(s.ust_created_at ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as checkedAt
+		`
+
+		fromClause = `
+			FROM weaving_status s
+			LEFT JOIN highlight h
+			ON s.ust_id = h.status_id
+		    ` + sinceWhen() + `
+		    ` + constraintOnRetweetStatus + `
+			LEFT JOIN publishers_list
+			ON h.aggregate_id = publishers_list.id
+			AND (
+				publishers_list.public_id = $1
+				OR publishers_list.public_id = $2
+			)
+		`
+
+		whereClause = `
+			WHERE
+			(s.ust_created_at::timestamp - '1 HOUR'::interval)::date = $3
+			AND ((s.ust_api_document::json->>'user')::json->>'id_str')::bigint NOT IN (
+				SELECT usr_twitter_id::bigint
+				FROM weaving_user member,
+				publishers_list publication_list
+				WHERE publication_list.deleted_at IS NOT NULL
+				AND member.usr_twitter_username = publication_list.screen_name
+				AND publication_list.screen_name IS NOT NULL
+			)
 		`
 
 		groupByClause = `
@@ -354,31 +409,12 @@ func queryTweets(
 	}
 
 	var query string
-	query = selectClause + `
-		FROM highlight h
-		INNER JOIN weaving_status s
-		ON s.ust_id = h.status_id
-		` + sinceWhen() + `
-		` + constraintOnRetweetStatus + `
-		INNER JOIN publishers_list
-		ON h.aggregate_id = publishers_list.id
-		AND (
-			publishers_list.public_id = $2
-			OR publishers_list.public_id = $3
-		)
+	query = selectClause + fromClause + `
 		LEFT JOIN status_popularity p
 		ON p.status_id = h.status_id
-		AND (p.checked_at::timestamp - '1 HOUR'::interval)::date = (h.publication_date_time::timestamp - '1 HOUR'::interval)::date 
-		-- Prevent publications by deleted members from being fetched
-		WHERE
-		h.member_id NOT IN (
-			SELECT usr_id
-			FROM weaving_user member,
-			publishers_list publication_list
-			WHERE publication_list.deleted_at IS NOT NULL
-			AND member.usr_twitter_username = publication_list.screen_name
-			AND publication_list.screen_name IS NOT NULL
-		) ` + groupByClause + `
+		AND (p.checked_at::timestamp - '1 HOUR'::interval)::date = (h.publication_date_time::timestamp - '1 HOUR'::interval)::date ` +
+		whereClause +
+		groupByClause + `
 		ORDER BY retweets ` + sortingOrder
 
 	if limit > 0 {
@@ -397,43 +433,73 @@ func selectTweetsWindow(limit int, page int, selectTweets *sql.Stmt, publishersL
 	if limit > 0 {
 		offset := page * tweetPerPage
 		itemsPerPage := limit
-		rows, err := selectTweets.Query(sinceDate, publishersListId, deprecatedPublisherId, offset, itemsPerPage)
+		rows, err := selectTweets.Query(publishersListId, deprecatedPublisherId, sinceDate, offset, itemsPerPage)
 		handleError(err)
 
 		return rows
 	}
 
-	rows, err := selectTweets.Query(sinceDate, publishersListId, deprecatedPublisherId)
+	rows, err := selectTweets.Query(publishersListId, deprecatedPublisherId, sinceDate)
 	handleError(err)
 
 	return rows
 }
 
-func countHighlights(db *sql.DB, limit int) int {
+func countHighlights(db *sql.DB, distinctSources bool, limit int) int {
 	var totalHighlights int
 
-	var query string
-	query = `
-		SELECT COUNT(*) highlights
+	fromClause := `
 		FROM highlight h
 		INNER JOIN weaving_status s
 		ON  s.ust_id = h.status_id
-		` + sinceWhen() + `
+		` + sinceWhen() + ` 
 		INNER JOIN publishers_list
 		ON h.aggregate_id = publishers_list.id
 		AND ( 
-			publishers_list.public_id = $2 OR 
-			publishers_list.public_id = $3
+			publishers_list.public_id = $1 OR 
+			publishers_list.public_id = $2
 		)
+	`
+
+	whereClause := `
+		WHERE
+		(h.publication_date_time::timestamp - '1 HOUR'::interval)::date = $3
+	`
+
+	if distinctSources {
+
+		fromClause = `
+			FROM weaving_status s
+			LEFT JOIN highlight h
+			ON s.ust_id = h.status_id
+			` + sinceWhen() + ` 
+			LEFT JOIN publishers_list
+			ON h.aggregate_id = publishers_list.id
+			AND ( 
+				publishers_list.public_id = $1 OR 
+				publishers_list.public_id = $2
+			)
+		`
+
+		whereClause = `
+			WHERE
+			(s.ust_created_at::timestamp - '1 HOUR'::interval)::date = $3
+		`
+	}
+
+	var query string
+	query = `
+		SELECT COUNT(*) highlights ` +
+		fromClause + `
 		LEFT JOIN status_popularity p
 		ON p.status_id = h.status_id
-		AND (p.checked_at::timestamp - '1 HOUR'::interval)::date = (h.publication_date_time::timestamp - '1 HOUR'::interval)::date
-    `
+		AND (p.checked_at::timestamp - '1 HOUR'::interval)::date = (h.publication_date_time::timestamp - '1 HOUR'::interval)::date ` +
+		whereClause
 
 	statement, err := db.Prepare(query)
 	handleError(err)
 
-	highlightsCount, err := statement.Query(sinceDate, publishersListId, deprecatedPublisherId)
+	highlightsCount, err := statement.Query(publishersListId, deprecatedPublisherId, sinceDate)
 	handleError(err)
 
 	columns, err := highlightsCount.Columns()
@@ -465,7 +531,7 @@ func sinceWhen() string {
 		return `AND s.ust_created_at::timestamp - '1 HOUR'::interval > NOW()::now - '7 DAYS::interval'`
 	}
 
-	return `AND (h.publication_date_time::timestamp - '1 HOUR'::interval)::date = $1`
+	return `AND (s.ust_created_at::timestamp - '1 HOUR'::interval)::date = (h.publication_date_time::timestamp - '1 HOUR'::interval)::date`
 }
 
 func migrateStatusesToFirebaseApp(
@@ -573,7 +639,7 @@ func migrateStatusesToFirebaseApp(
 	}
 
 	if distinctSources {
-		statusType = "statusFromDistinctSources"
+		statusType = statusType + "FromDistinctSources"
 	}
 
 	path := "highlights/" + publishersListId + "/" + sinceDate + "/" + statusType + "/"
@@ -629,7 +695,7 @@ func addToFirebaseApp(tweet Tweet, index int, distinctSources bool, firebase *fi
 	}
 
 	if distinctSources {
-		statusType = "statusFromDistinctSources"
+		statusType = statusType + "FromDistinctSources"
 	}
 
 	statusRef, err := firebase.Ref("highlights/" + publishersListId + "/" + sinceDate + "/" +
