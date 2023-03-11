@@ -328,15 +328,15 @@ func queryTweets(
 		INNER JOIN publishers_list
 		ON h.aggregate_id = publishers_list.id
 		AND (
-			publishers_list.public_id = $1
-			OR publishers_list.public_id = $2
+			publishers_list.public_id = $2
+			OR publishers_list.public_id = $3
 		)
 	`
 
 	whereClause := `
 	-- Prevent publications by deleted members from being fetched
 	WHERE
-	(h.publication_date_time::timestamp - '1 HOUR'::interval)::date = $3
+	(h.publication_date_time::timestamp - '1 HOUR'::interval)::date = $4
 	AND h.member_id NOT IN (
 		SELECT usr_id
 		FROM weaving_user member,
@@ -384,14 +384,14 @@ func queryTweets(
 			LEFT JOIN publishers_list
 			ON h.aggregate_id = publishers_list.id
 			AND (
-				publishers_list.public_id = $1
-				OR publishers_list.public_id = $2
+				publishers_list.public_id = $2
+				OR publishers_list.public_id = $3
 			)
 		`
 
 		whereClause = `
 			WHERE
-			(s.ust_created_at::timestamp - '1 HOUR'::interval)::date = $3
+			(s.ust_created_at::timestamp - '1 HOUR'::interval)::date = $4
 			AND ((s.ust_api_document::json->>'user')::json->>'id_str')::bigint NOT IN (
 				SELECT usr_twitter_id::bigint
 				FROM weaving_user member,
@@ -418,7 +418,7 @@ func queryTweets(
 		ORDER BY retweets ` + sortingOrder
 
 	if limit > 0 {
-		query = query + ` OFFSET $4 LIMIT $5`
+		query = query + ` OFFSET $5 LIMIT $6`
 	}
 
 	selectTweets, err := db.Prepare(query)
@@ -433,13 +433,13 @@ func selectTweetsWindow(limit int, page int, selectTweets *sql.Stmt, publishersL
 	if limit > 0 {
 		offset := page * tweetPerPage
 		itemsPerPage := limit
-		rows, err := selectTweets.Query(publishersListId, deprecatedPublisherId, sinceDate, offset, itemsPerPage)
+		rows, err := selectTweets.Query(sinceDate, publishersListId, deprecatedPublisherId, sinceDate, offset, itemsPerPage)
 		handleError(err)
 
 		return rows
 	}
 
-	rows, err := selectTweets.Query(publishersListId, deprecatedPublisherId, sinceDate)
+	rows, err := selectTweets.Query(sinceDate, publishersListId, deprecatedPublisherId, sinceDate)
 	handleError(err)
 
 	return rows
@@ -456,14 +456,14 @@ func countHighlights(db *sql.DB, distinctSources bool, limit int) int {
 		INNER JOIN publishers_list
 		ON h.aggregate_id = publishers_list.id
 		AND ( 
-			publishers_list.public_id = $1 OR 
-			publishers_list.public_id = $2
+			publishers_list.public_id = $2 OR 
+			publishers_list.public_id = $3
 		)
 	`
 
 	whereClause := `
 		WHERE
-		(h.publication_date_time::timestamp - '1 HOUR'::interval)::date = $3
+		(h.publication_date_time::timestamp - '1 HOUR'::interval)::date = $4
 	`
 
 	if distinctSources {
@@ -476,14 +476,14 @@ func countHighlights(db *sql.DB, distinctSources bool, limit int) int {
 			LEFT JOIN publishers_list
 			ON h.aggregate_id = publishers_list.id
 			AND ( 
-				publishers_list.public_id = $1 OR 
-				publishers_list.public_id = $2
+				publishers_list.public_id = $2 OR 
+				publishers_list.public_id = $3
 			)
 		`
 
 		whereClause = `
 			WHERE
-			(s.ust_created_at::timestamp - '1 HOUR'::interval)::date = $3
+			(s.ust_created_at::timestamp - '1 HOUR'::interval)::date = $4
 		`
 	}
 
@@ -499,7 +499,7 @@ func countHighlights(db *sql.DB, distinctSources bool, limit int) int {
 	statement, err := db.Prepare(query)
 	handleError(err)
 
-	highlightsCount, err := statement.Query(publishersListId, deprecatedPublisherId, sinceDate)
+	highlightsCount, err := statement.Query(sinceDate, publishersListId, deprecatedPublisherId, sinceDate)
 	handleError(err)
 
 	columns, err := highlightsCount.Columns()
@@ -531,7 +531,10 @@ func sinceWhen() string {
 		return `AND s.ust_created_at::timestamp - '1 HOUR'::interval > NOW()::now - '7 DAYS::interval'`
 	}
 
-	return `AND (s.ust_created_at::timestamp - '1 HOUR'::interval)::date = (h.publication_date_time::timestamp - '1 HOUR'::interval)::date`
+	return `
+		AND (s.ust_created_at::timestamp - '1 HOUR'::interval)::date = (h.publication_date_time::timestamp - '1 HOUR'::interval)::date
+		AND (s.ust_created_at::timestamp - '1 HOUR'::interval)::date = $1
+	`
 }
 
 func migrateStatusesToFirebaseApp(
