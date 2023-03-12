@@ -297,7 +297,14 @@ func queryTweets(
 	page int,
 	limit int,
 	sortingOrder string) {
-	totalHighlights := countHighlights(db, distinctSources, limit)
+
+	var totalHighlights int
+
+	if migrateDistinctSourcesOnly {
+		fmt.Printf("Skipping curated highlights count\n")
+	} else {
+		totalHighlights = countHighlights(db, distinctSources, limit)
+	}
 
 	constraintOnRetweetStatus := ""
 	if !includeRetweets {
@@ -566,7 +573,13 @@ func migrateStatusesToFirebaseApp(
 
 	rowIndex := 0
 
-	tweets := make([]Tweet, totalHighlights)
+	var tweets []Tweet
+
+	if migrateDistinctSourcesOnly {
+		tweets = make([]Tweet, 10)
+	} else {
+		tweets = make([]Tweet, totalHighlights)
+	}
 
 	for rows.Next() {
 		err = rows.Scan(scanArgs...)
