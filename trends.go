@@ -363,17 +363,17 @@ func queryTweets(
 	if distinctSources {
 		selectClause = `
 			SELECT
-			(ARRAY_AGG(CONCAT('https://twitter.com/', ust_full_name, '/status/', ust_status_id) ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as url,
-			(ARRAY_AGG(s.ust_full_name ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as username,
-			(ARRAY_AGG(s.ust_text ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as tweet,
-			(ARRAY_AGG(s.ust_created_at ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as publicationDate,
-			(ARRAY_AGG(s.ust_api_document ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as Json,
+			(ARRAY_AGG(CONCAT('https://twitter.com/', ust_full_name, '/status/', ust_status_id) ORDER BY COALESCE(p.total_retweets, h.total_retweets, (ust_api_document::json->>'retweet_count')::integer) DESC))[1] as url,
+			(ARRAY_AGG(s.ust_full_name ORDER BY COALESCE(p.total_retweets, h.total_retweets, (ust_api_document::json->>'retweet_count')::integer) DESC))[1] as username,
+			(ARRAY_AGG(s.ust_text ORDER BY COALESCE(p.total_retweets, h.total_retweets, (ust_api_document::json->>'retweet_count')::integer) DESC))[1] as tweet,
+			(ARRAY_AGG(s.ust_created_at ORDER BY COALESCE(p.total_retweets, h.total_retweets, (ust_api_document::json->>'retweet_count')::integer) DESC))[1] as publicationDate,
+			(ARRAY_AGG(s.ust_api_document ORDER BY COALESCE(p.total_retweets, h.total_retweets, (ust_api_document::json->>'retweet_count')::integer) DESC))[1] as Json,
 			MAX(COALESCE(p.total_retweets, h.total_retweets, (ust_api_document::json->>'retweet_count')::integer)) retweets,
 			MAX(COALESCE(p.total_favorites, h.total_retweets, (ust_api_document::json->>'favorite_count')::integer)) favorites,
-			(ARRAY_AGG(s.ust_id ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as id,
-			(ARRAY_AGG(s.ust_status_id ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as statusId,
-			(ARRAY_AGG(COALESCE(h.is_retweet, s.ust_api_document::json->>'retweeted_status' IS NOT NULL, false) ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as is_retweet,
-			(ARRAY_AGG(s.ust_created_at ORDER BY COALESCE(p.total_retweets, h.total_retweets) DESC))[1] as checkedAt
+			(ARRAY_AGG(s.ust_id ORDER BY COALESCE(p.total_retweets, h.total_retweets, (ust_api_document::json->>'retweet_count')::integer) DESC))[1] as id,
+			(ARRAY_AGG(s.ust_status_id ORDER BY COALESCE(p.total_retweets, h.total_retweets, (ust_api_document::json->>'retweet_count')::integer) DESC))[1] as statusId,
+			(ARRAY_AGG(COALESCE(h.is_retweet, s.ust_api_document::json->>'retweeted_status' IS NOT NULL, false) ORDER BY COALESCE(p.total_retweets, h.total_retweets, (ust_api_document::json->>'retweet_count')::integer) DESC))[1] as is_retweet,
+			(ARRAY_AGG(s.ust_created_at ORDER BY COALESCE(p.total_retweets, h.total_retweets, (ust_api_document::json->>'retweet_count')::integer) DESC))[1] as checkedAt
 		`
 
 		fromClause = `
