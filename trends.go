@@ -382,9 +382,14 @@ func queryTweets(
 			ON s.ust_id = h.status_id
 		    ` + sinceWhen() + `
 		    ` + constraintOnRetweetStatus + `
-			LEFT JOIN publishers_list
-			ON h.aggregate_id = publishers_list.id
-			AND (
+			INNER JOIN publishers_list
+			ON (
+				h.aggregate_id = publishers_list.id
+				OR (
+					s.ust_full_name = publishers_list.screen_name
+					AND publishers_list.screen_name IS NOT NULL
+				)
+			) AND (
 				publishers_list.public_id = $2
 				OR publishers_list.public_id = $3
 			)
