@@ -1,36 +1,45 @@
 FROM        golang:1.20-bullseye
 
-ARG         WORKER="trends.example.org"
-ARG         WORKER_UID=1000
-ARG         WORKER_GID=101
+ARG         OWNER_UID
+ARG         OWNER_GID
+ARG         WORKER
 
-COPY        --chown=${WORKER_UID}:${WORKER_GID} \
+RUN         test -n "${OWNER_UID}" && \
+            test -n "${OWNER_GID}" && \
+            test -n "${WORKER}"
+
+ENV         WORKER_OWNER_UID=${OWNER_UID}
+ENV         WORKER_OWNER_GID=${OWNER_GID}
+
+ARG         WORKER_DIR="${WORKER}"
+
+COPY        --chown=${WORKER_OWNER_UID}:${WORKER_OWNER_GID} \
             . \
             /var/www/${WORKER}
 
-COPY        --chown=${WORKER_UID}:${WORKER_GID} \
+COPY        --chown=${WORKER_OWNER_UID}:${WORKER_OWNER_GID} \
             ./config.firebase.json \
             /var/www/${WORKER}/config.firebase.json
 
-COPY        --chown=${WORKER_UID}:${WORKER_GID} \
+COPY        --chown=${WORKER_OWNER_UID}:${WORKER_OWNER_GID} \
             ./config.json \
             /var/www/${WORKER}/config.json
 
-COPY        --chown=${WORKER_UID}:${WORKER_GID} \
+COPY        --chown=${WORKER_OWNER_UID}:${WORKER_OWNER_GID} \
             ./provisioning/containers/_scripts \
             /scripts
 
-COPY        --chown=${WORKER_UID}:${WORKER_GID} \
+COPY        --chown=${WORKER_OWNER_UID}:${WORKER_OWNER_GID} \
             ./provisioning/containers/_scripts/cmd-worker.sh \
             /start.sh
 
 RUN         /bin/bash -c 'source /scripts/install-worker-requirements.sh'
 
-USER        ${WORKER_UID}:${WORKER_GID}
+USER        ${WORKER_OWNER_UID}:${WORKER_OWNER_GID}
 
-WORKDIR     /var/www/${WORKER}
+VOLUME      ["/scripts", "/var/www/shared", "/var/www/${WORKER_DIR}"]
 
-VOLUME      ["/scripts", "/var/www/shared", "/var/www/${WORKER}"]
+WORKDIR     /var/www/${WORKER_DIR}
 
 ENTRYPOINT  ["/usr/bin/tini", "--"]
 
