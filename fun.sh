@@ -58,8 +58,8 @@ function build() {
     local COMPOSE_PROJECT_NAME
     local DEBUG
     local WORKER
-    local WORKER_UID
-    local WORKER_GID
+    local WORKER_OWNER_UID
+    local WORKER_OWNER_GID
 
     load_configuration_parameters
 
@@ -82,8 +82,8 @@ function build() {
             --file=./provisioning/containers/docker-compose.override.yaml \
             build \
             --no-cache \
-            --build-arg "WORKER_UID=${WORKER_UID}" \
-            --build-arg "WORKER_GID=${WORKER_GID}" \
+            --build-arg "OWNER_UID=${WORKER_OWNER_UID}" \
+            --build-arg "OWNER_GID=${WORKER_OWNER_GID}" \
             --build-arg "WORKER=${WORKER}" \
             app \
             worker
@@ -94,8 +94,8 @@ function build() {
             --file=./provisioning/containers/docker-compose.yaml \
             --file=./provisioning/containers/docker-compose.override.yaml \
             build \
-            --build-arg "WORKER_UID=${WORKER_UID}" \
-            --build-arg "WORKER_GID=${WORKER_GID}" \
+            --build-arg "OWNER_UID=${WORKER_OWNER_UID}" \
+            --build-arg "OWNER_GID=${WORKER_OWNER_GID}" \
             --build-arg "WORKER=${WORKER}" \
             app \
             worker
@@ -113,10 +113,10 @@ function guard_against_missing_variables() {
 
     fi
 
-    if [ "${COMPOSE_PROJECT_NAME}" = 'trends_example_org' ];
+    if [ "${COMPOSE_PROJECT_NAME}" = 'org_example_trends' ];
     then
 
-        printf 'Have you picked a satisfying worker name ("%s" environment variable - "%s" default value is not accepted).%s' 'WORKER' 'trends_example_org' $'\n'
+        printf 'Have you picked a satisfying worker name ("%s" environment variable - "%s" default value is not accepted).%s' 'WORKER' 'org_example_trends' $'\n'
 
         exit 1
 
@@ -140,19 +140,19 @@ function guard_against_missing_variables() {
 
     fi
 
-    if [ -z "${WORKER_UID}" ];
+    if [ -z "${WORKER_OWNER_UID}" ];
     then
 
-        printf 'A %s is expected as %s ("%s").%s' 'non-empty numeric' 'system user uid' 'WORKER_UID' $'\n'
+        printf 'A %s is expected as %s ("%s").%s' 'non-empty numeric' 'system user uid' 'WORKER_OWNER_UID' $'\n'
 
         exit 1
 
     fi
 
-    if [ -z "${WORKER_GID}" ];
+    if [ -z "${WORKER_OWNER_GID}" ];
     then
 
-        printf 'A %s is expected as %s ("%s").%s' 'non-empty numeric' 'system user gid' 'WORKER_GID' $'\n'
+        printf 'A %s is expected as %s ("%s").%s' 'non-empty numeric' 'system user gid' 'WORKER_OWNER_GID' $'\n'
 
         exit 1
 
@@ -174,8 +174,8 @@ function remove_running_container_and_image_in_debug_mode() {
 
     local COMPOSE_PROJECT_NAME
     local DEBUG
-    local WORKER_UID
-    local WORKER_GID
+    local WORKER_OWNER_UID
+    local WORKER_OWNER_GID
     local WORKER
 
     load_configuration_parameters
@@ -252,8 +252,8 @@ function clean() {
 function install() {
     local COMPOSE_PROJECT_NAME
     local DEBUG
-    local WORKER_UID
-    local WORKER_GID
+    local WORKER_OWNER_UID
+    local WORKER_OWNER_GID
     local WORKER
 
     load_configuration_parameters
@@ -316,8 +316,8 @@ function start() {
     local COMPOSE_PROJECT_NAME
     local DEBUG
     local WORKER
-    local WORKER_UID
-    local WORKER_GID
+    local WORKER_OWNER_UID
+    local WORKER_OWNER_GID
 
     load_configuration_parameters
 
