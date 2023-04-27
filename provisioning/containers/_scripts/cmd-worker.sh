@@ -3,9 +3,9 @@ set -Eeo pipefail
 
 function start() {
     printf '%s.%s' 'Changing directories' $'\n' 1>&2
-    printf '%s%s' "/var/www/${WORKER}" $'\n' 1>&2
+    printf '%s%s' "/var/www/${WORKER_DIR}" $'\n' 1>&2
 
-    cd "/var/www/${WORKER}" || exit
+    cd "/var/www/${WORKER_DIR}" || exit
 
     if [ -e ./bin/trends ];
     then

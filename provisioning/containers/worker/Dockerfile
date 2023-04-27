@@ -15,15 +15,15 @@ ARG         WORKER_DIR="${WORKER}"
 
 COPY        --chown=${WORKER_OWNER_UID}:${WORKER_OWNER_GID} \
             . \
-            /var/www/${WORKER}
+            /var/www/${WORKER_DIR}
 
 COPY        --chown=${WORKER_OWNER_UID}:${WORKER_OWNER_GID} \
             ./config.firebase.json \
-            /var/www/${WORKER}/config.firebase.json
+            /var/www/${WORKER_DIR}/config.firebase.json
 
 COPY        --chown=${WORKER_OWNER_UID}:${WORKER_OWNER_GID} \
             ./config.json \
-            /var/www/${WORKER}/config.json
+            /var/www/${WORKER_DIR}/config.json
 
 COPY        --chown=${WORKER_OWNER_UID}:${WORKER_OWNER_GID} \
             ./provisioning/containers/_scripts \
@@ -39,7 +39,7 @@ USER        ${WORKER_OWNER_UID}:${WORKER_OWNER_GID}
 
 VOLUME      ["/scripts", "/var/www/shared", "/var/www/${WORKER_DIR}"]
 
-WORKDIR     /var/www/${WORKER_DIR}
+WORKDIR     "/var/www/${WORKER_DIR}"
 
 ENTRYPOINT  ["/usr/bin/tini", "--"]
 
