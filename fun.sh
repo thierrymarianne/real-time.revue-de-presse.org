@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+function green() {
+    echo -n "\e[32m"
+}
+
+function reset_color() {
+    echo -n $'\033'\[00m
+}
+
 function load_configuration_parameters() {
     if [ ! -e ./.env ]; then
         cp --verbose ./.env{.dist,}
@@ -18,14 +26,23 @@ function load_configuration_parameters() {
         cp ./provisioning/containers/docker-compose.override.yaml{.dist,}
     fi
 
-    validate_docker_compose_configuration
-
     source ./.env
 
+    validate_docker_compose_configuration
     guard_against_missing_variables
+
+    printf '%s'           $'\n'
+    printf '%b%s%b"%s"%s' "$(green)" 'COMPOSE_PROJECT_NAME: ' "$(reset_color)" "${COMPOSE_PROJECT_NAME}" $'\n'
+    printf '%b%s%b"%s"%s' "$(green)" 'DEBUG:                ' "$(reset_color)" "${DEBUG}" $'\n'
+    printf '%b%s%b"%s"%s' "$(green)" 'WORKER_DIR:           ' "$(reset_color)" "${WORKER}" $'\n'
+    printf '%b%s%b"%s"%s' "$(green)" 'WORKER_OWNER_UID:     ' "$(reset_color)" "${WORKER_OWNER_UID}" $'\n'
+    printf '%b%s%b"%s"%s' "$(green)" 'WORKER_OWNER_GID:     ' "$(reset_color)" "${WORKER_OWNER_GID}" $'\n'
+    printf '%s'           $'\n'
 }
 
 function set_file_permissions() {
+    load_configuration_parameters
+
     local temporary_directory
     temporary_directory="${1}"
 
@@ -43,7 +60,11 @@ function set_file_permissions() {
         return 1;
     fi
 
+    local project_name
+    project_name="$(get_project_name)"
+
     docker compose \
+        --project-name="${project_name}" \
         -f ./provisioning/containers/docker-compose.yaml \
         -f ./provisioning/containers/docker-compose.override.yaml \
         run \
@@ -72,12 +93,16 @@ function build() {
 
     fi
 
+    local project_name
+    project_name="$(get_project_name)"
+
     if [ -n "${DEBUG}" ];
     then
 
         clean ''
 
         docker compose \
+            --project-name="${project_name}" \
             --file=./provisioning/containers/docker-compose.yaml \
             --file=./provisioning/containers/docker-compose.override.yaml \
             build \
@@ -91,9 +116,11 @@ function build() {
     else
 
         docker compose \
+            --project-name="${project_name}" \
             --file=./provisioning/containers/docker-compose.yaml \
             --file=./provisioning/containers/docker-compose.override.yaml \
             build \
+            --no-cache \
             --build-arg "OWNER_UID=${WORKER_OWNER_UID}" \
             --build-arg "OWNER_GID=${WORKER_OWNER_GID}" \
             --build-arg "WORKER=${WORKER}" \
@@ -268,10 +295,11 @@ function install() {
     fi
 
     docker compose \
+        --project-name="${project_name}" \
         -f ./provisioning/containers/docker-compose.yaml \
         -f ./provisioning/containers/docker-compose.override.yaml \
         run \
-        --env WORKER_WORKSPACE="${WORKER}" \
+        --env WORKER="${WORKER}" \
         --user root \
         --rm \
         --no-TTY \
@@ -280,17 +308,16 @@ function install() {
 }
 
 function get_project_name() {
-    local project_name
-    project_name="$(
-        docker compose \
-        -f ./provisioning/containers/docker-compose.yaml \
-        -f ./provisioning/containers/docker-compose.override.yaml \
-        config --format json \
-        | jq '.name' \
-        | tr -d '"'
-    )"
+    if [ -z "${COMPOSE_PROJECT_NAME}" ];
+    then
 
-    echo "${project_name}"
+      printf 'A %s is expected as %s ("%s").%s' 'non-empty string' '"COMPOSE_PROJECT_NAME" environment variable' 'docker compose project name' $'\n'
+
+      return 1;
+
+    fi
+
+    echo "${COMPOSE_PROJECT_NAME}"
 }
 
 function get_worker_shell() {
@@ -360,15 +387,19 @@ function start() {
 
     fi
 
+    local project_name
+    project_name="$(get_project_name)"
+
     cmd="$(
         cat <<-START
 				docker compose \
-				--file=./provisioning/containers/docker-compose.yaml \
-				--file=./provisioning/containers/docker-compose.override.yaml \
-				run \
-				--rm \
-				worker \
-				bash -c 'bin/trends -publishers-list-id="${publishers_list_id}" -migrate-distinct-sources-only=${from_distinct_sources} -since-date="${date}" -in-parallel=true'
+          --project-name="${project_name}" \
+          --file=./provisioning/containers/docker-compose.yaml \
+          --file=./provisioning/containers/docker-compose.override.yaml \
+          run \
+          --rm \
+          worker \
+          bash -c 'bin/trends -publishers-list-id="${publishers_list_id}" -migrate-distinct-sources-only=${from_distinct_sources} -since-date="${date}" -in-parallel=true'
 START
 )"
 

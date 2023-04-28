@@ -15,7 +15,7 @@ function add_system_user_group() {
         --no-user-group \
         --non-unique \
         --shell /usr/sbin/nologin \
-        --uid ${WORKER_UID} \
+        --uid ${WORKER_OWNER_UID} \
         worker
 }
 
@@ -39,37 +39,37 @@ function create_log_files_when_non_existing() {
         return 1
     fi
 
-    if [ ! -d "/var/www/${WORKER}/var/log" ];
+    if [ ! -d "/var/www/${WORKER_DIR}/var/log" ];
     then
 
         mkdir \
           --verbose \
           --parents \
-          "/var/www/${WORKER}/var/log"
+          "/var/www/${WORKER_DIR}/var/log"
 
     fi
 
-    if [ ! -e "/var/www/${WORKER}/var/log/${prefix}.log" ];
+    if [ ! -e "/var/www/${WORKER_DIR}/var/log/${prefix}.log" ];
     then
 
-        touch "/var/www/${WORKER}/var/log/${prefix}.log"
+        touch "/var/www/${WORKER_DIR}/var/log/${prefix}.log"
 
-        printf '%s "%s".%s' 'Created file located at' "/var/www/${WORKER}/var/log/${prefix}.log" $'\n'
+        printf '%s "%s".%s' 'Created file located at' "/var/www/${WORKER_DIR}/var/log/${prefix}.log" $'\n'
 
     fi
 
-    if [ ! -e "/var/www/${WORKER}/var/log/${prefix}.error.log" ];
+    if [ ! -e "/var/www/${WORKER_DIR}/var/log/${prefix}.error.log" ];
     then
 
-        touch "/var/www/${WORKER}/var/log/${prefix}.error.log"
+        touch "/var/www/${WORKER_DIR}/var/log/${prefix}.error.log"
 
-        printf '%s "%s".%s' 'Created file located at' "/var/www/${WORKER}/var/log/${prefix}.error.log" $'\n'
+        printf '%s "%s".%s' 'Created file located at' "/var/www/${WORKER_DIR}/var/log/${prefix}.error.log" $'\n'
 
     fi
 }
 
 function set_permissions() {
-    chown -R  worker.   /var/www/"${WORKER}"/var/log/* \
+    chown -R  worker.   /var/www/"${WORKER_DIR}"/var/log/* \
                         /var/www \
                         /start.sh
 
