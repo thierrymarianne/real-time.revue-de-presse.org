@@ -25,6 +25,7 @@ import (
 	"time"
 )
 
+var dryMode bool
 var username string
 var readFromLocalDb bool
 var listAggregateNames bool
@@ -90,8 +91,10 @@ func init() {
 		localDbDescription        = "The database from which tweets should be read"
 		sinceTodayDescription     = "Store tweets collected over the current day"
 		sinceLastWeekDescription  = "Store tweets collected over the last week"
+		dryModeDescription  	  = "Show a preview of the SQL queries to be executed without executing them"
 	)
 
+	flag.BoolVar(&dryMode, "dry-mode", false, dryModeDescription)
 	flag.StringVar(&username, "username", defaultUsername, usage)
 	flag.BoolVar(&readFromLocalDb, "read-from-local-db", false, localDbDescription)
 	flag.BoolVar(&sinceAWeekAgo, "since-last-week", false, sinceLastWeekDescription)
@@ -319,7 +322,7 @@ func queryTweets(
 		s.ust_created_at as publicationDate,
 		s.ust_api_document as Json,
 		MAX(COALESCE(p.total_retweets, h.total_retweets)) retweets,
-		MAX(COALESCE(p.total_favorites, h.total_retweets)) favorites,
+		MAX(COALESCE(p.total_favorites, h.total_favorites)) favorites,
 		s.ust_id as id,
 		s.ust_status_id as statusId,
 		h.is_retweet,
@@ -440,6 +443,12 @@ func queryTweets(
 		query = query + ` OFFSET $5 LIMIT $6`
 	}
 
+	if dryMode {
+		fmt.Printf("```SQL\n")
+		fmt.Printf("%s\n", query)
+		fmt.Printf("```")
+	}
+
 	selectTweets, err := db.Prepare(query)
 	handleError(err)
 
@@ -452,6 +461,18 @@ func selectTweetsWindow(limit int, page int, selectTweets *sql.Stmt, publishersL
 	if limit > 0 {
 		offset := page * tweetPerPage
 		itemsPerPage := limit
+
+		if dryMode {
+			fmt.Printf("```SQL\n")
+			fmt.Printf("%s\n", sinceDate)
+			fmt.Printf("%s\n", publishersListId)
+			fmt.Printf("%s\n", deprecatedPublisherId)
+			fmt.Printf("%s\n", sinceDate)
+			fmt.Printf("%d\n", offset)
+			fmt.Printf("%d\n", itemsPerPage)
+			fmt.Printf("```")
+		}
+
 		rows, err := selectTweets.Query(sinceDate, publishersListId, deprecatedPublisherId, sinceDate, offset, itemsPerPage)
 		handleError(err)
 
@@ -743,6 +764,12 @@ func addToFirebaseApp(tweet Tweet, index int, distinctSources bool, firebase *fi
 		"twitter_id":     decodedApiDocument.Id,
 		"totalRetweets":  tweet.retweets,
 		"totalFavorites": tweet.favorites,
+	}
+
+	if dryMode {
+		fmt.Printf("Dry mode is active. Exiting.\n")
+
+		return
 	}
 
 	err = statusRef.Update(status)
