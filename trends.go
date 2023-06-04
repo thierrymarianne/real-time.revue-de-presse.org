@@ -322,7 +322,7 @@ func queryTweets(
 		s.ust_created_at as publicationDate,
 		s.ust_api_document as Json,
 		MAX(COALESCE(p.total_retweets, h.total_retweets)) retweets,
-		MAX(COALESCE(p.total_favorites, h.total_retweets)) favorites,
+		MAX(COALESCE(p.total_favorites, h.total_favorites)) favorites,
 		s.ust_id as id,
 		s.ust_status_id as statusId,
 		h.is_retweet,
