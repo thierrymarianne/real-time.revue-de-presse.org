@@ -382,7 +382,7 @@ func queryTweets(
 			MAX(COALESCE(p.total_favorites, h.total_retweets, (ust_api_document::json->>'favorite_count')::integer)) favorites,
 			(ARRAY_AGG(s.ust_id ORDER BY COALESCE(p.total_retweets, h.total_retweets, (ust_api_document::json->>'retweet_count')::integer) DESC))[1] as id,
 			(ARRAY_AGG(s.ust_status_id ORDER BY COALESCE(p.total_retweets, h.total_retweets, (ust_api_document::json->>'retweet_count')::integer) DESC))[1] as statusId,
-			(ARRAY_AGG(COALESCE(h.is_retweet, s.ust_api_document::json->>'retweeted_status' IS NOT NULL, false) ORDER BY COALESCE(p.total_retweets, h.total_retweets, (ust_api_document::json->>'retweet_count')::integer) DESC))[1] as is_retweet,
+			(ARRAY_AGG(COALESCE(h.is_retweet, s.ust_api_document::json->>'retweeted_status_result' IS NOT NULL, false) ORDER BY COALESCE(p.total_retweets, h.total_retweets, (ust_api_document::json->>'retweet_count')::integer) DESC))[1] as is_retweet,
 			(ARRAY_AGG(s.ust_created_at ORDER BY COALESCE(p.total_retweets, h.total_retweets, (ust_api_document::json->>'retweet_count')::integer) DESC))[1] as checkedAt
 		`
 
@@ -413,7 +413,7 @@ func queryTweets(
 		whereClause = `
 			WHERE
 			(s.ust_created_at::timestamp - '1 HOUR'::interval)::date = $4
-			AND COALESCE(h.is_retweet, s.ust_api_document::json->>'retweeted_status' IS NOT NULL, false) =  ` + isOfRetweetKind + `
+			AND COALESCE(h.is_retweet, s.ust_api_document::json->>'retweeted_status_result' IS NOT NULL, false) =  ` + isOfRetweetKind + `
 			AND ((s.ust_api_document::json->>'user')::json->>'id_str')::bigint NOT IN (
 				SELECT usr_twitter_id::bigint
 				FROM weaving_user member,
