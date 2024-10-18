@@ -1,4 +1,4 @@
-FROM        golang:1.20-bullseye
+FROM        golang:1.22.8-bullseye
 
 ARG         OWNER_UID
 ARG         OWNER_GID
